@@ -25,6 +25,7 @@
 #include <Configurations/Descriptor.hpp>
 #include <Runtime/TupleBuffer.hpp>
 #include <Sinks/SinkDescriptor.hpp>
+#include <Util/Logger/Formatter.hpp>
 #include <Util/Logger/Logger.hpp>
 #include <fmt/ostream.h>
 #include <ErrorHandling.hpp>
@@ -32,7 +33,7 @@
 #include <SinkRegistry.hpp>
 #include <SinkValidationRegistry.hpp>
 #include "Identifiers/NESStrongType.hpp"
-#include "Util/Logger/Formatter.hpp"
+#include <Sinks/Sink.hpp>
 
 namespace NES
 {
@@ -56,11 +57,11 @@ struct LatencyMeasurements
 
 FMT_OSTREAM(NES::LatencyMeasurements);
 
-namespace NES::Sinks
+namespace NES
 {
 
 MonitoringSink::MonitoringSink(BackpressureController backpressureController, const SinkDescriptor& sinkDescriptor)
-    :Sink(std::move(backpressureController))
+    : Sink(std::move(backpressureController))
     , isOpen(false)
     , outputFilePath(sinkDescriptor.getFromConfig(SinkDescriptor::FILE_PATH))
     // Todo: needs to be fileSize * repetitions * numClients
@@ -72,6 +73,7 @@ MonitoringSink::MonitoringSink(BackpressureController backpressureController, co
 
 void MonitoringSink::start(PipelineExecutionContext&)
 {
+    NES_ERROR("Was here");
     NES_DEBUG("Setting up monitoring sink: {}", *this);
     if (std::filesystem::exists(outputFilePath.c_str()))
     {
@@ -157,6 +159,7 @@ void MonitoringSink::execute(const TupleBuffer& inputBuffer, PipelineExecutionCo
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
         const auto bufferLatency = arrivalTimeInMS - inputBuffer.getSourceCreationTimestampInMS().getRawValue();
         bufferLatenciesInMS.emplace(inputBuffer.getSequenceNumber(), bufferLatency);
+        NES_ERROR("Measured Latency: {}", bufferLatency);
         if (inputBuffer.getSequenceNumber() == INITIAL<SequenceNumber>)
         {
             timestampOfFirstSN = inputBuffer.getSourceCreationTimestampInMS().getRawValue();
@@ -173,15 +176,14 @@ DescriptorConfig::Config MonitoringSink::validateAndFormat(std::unordered_map<st
     return DescriptorConfig::validateAndFormat<ConfigParametersMonitoring>(std::move(config), NAME);
 }
 
-SinkValidationRegistryReturnType
-SinkValidationGeneratedRegistrar::RegisterMonitoringSinkValidation(SinkValidationRegistryArguments sinkConfig)
+SinkValidationRegistryReturnType RegisterMonitoringSinkValidation(SinkValidationRegistryArguments sinkConfig)
 {
     return MonitoringSink::validateAndFormat(std::move(sinkConfig.config));
 }
 
-SinkRegistryReturnType SinkGeneratedRegistrar::RegisterMonitoringSink(SinkRegistryArguments sinkRegistryArguments)
+SinkRegistryReturnType RegisterMonitoringSink(SinkRegistryArguments sinkRegistryArguments)
 {
-    return std::make_unique<MonitoringSink>(sinkRegistryArguments.sinkDescriptor);
+    return std::make_unique<MonitoringSink>(std::move(sinkRegistryArguments.backpressureController), sinkRegistryArguments.sinkDescriptor);
 }
 
 }

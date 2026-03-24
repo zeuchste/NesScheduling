@@ -31,7 +31,7 @@
 #include <PipelineExecutionContext.hpp>
 #include <Identifiers/Identifiers.hpp>
 
-namespace NES::Sinks
+namespace NES
 {
 
 class MonitoringSink : public Sink
@@ -69,7 +69,7 @@ private:
 struct ConfigParametersMonitoring
 {
     static inline const DescriptorConfig::ConfigParameter<uint64_t> SIZE_OF_INPUT_DATA_IN_BYTES{
-        "sizeOfInputDataInBytes",
+        "size_of_input_data_in_bytes",
         0,
         [](const std::unordered_map<std::string, std::string>& config)
         { return DescriptorConfig::tryGet(SIZE_OF_INPUT_DATA_IN_BYTES, config); }};
@@ -85,4 +85,4 @@ struct ConfigParametersMonitoring
 
 }
 
-FMT_OSTREAM(NES::Sinks::MonitoringSink);
+FMT_OSTREAM(NES::MonitoringSink);
