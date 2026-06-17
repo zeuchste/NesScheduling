@@ -14,23 +14,33 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <vector>
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/PagedVector/PagedVector.hpp>
 #include <Join/StreamJoinUtil.hpp>
 #include <Runtime/AbstractBufferProvider.hpp>
+#include <Runtime/BufferManager.hpp>
+#include <Runtime/Spill/ArenaMemoryResource.hpp>
+#include <Runtime/Spill/SpillManager.hpp>
 #include <SliceStore/Slice.hpp>
 
 namespace NES
 {
 
 /// This class represents a single slice for the NestedLoopJoin. It stores all tuples for the left and right stream.
-class NLJSlice final : public Slice
+/// When state spilling is enabled it is also a SpillableState: all of its PagedVectors allocate from one per-slice
+/// arena-backed BufferManager, so the whole slice (both sides, all workers) is a single spill unit.
+class NLJSlice final : public Slice, public SpillableState
 {
 public:
-    NLJSlice(SliceStart sliceStart, SliceEnd sliceEnd, uint64_t numberOfWorkerThreads);
+    NLJSlice(
+        SliceStart sliceStart, SliceEnd sliceEnd, uint64_t numberOfWorkerThreads, std::shared_ptr<SpillManager> spillManager = nullptr);
+    ~NLJSlice() override;
 
     /// Returns the number of tuples in this slice on either side.
     [[nodiscard]] uint64_t getNumberOfTuplesLeft() const;
@@ -44,9 +54,23 @@ public:
     /// Moves all tuples in this slice to the PagedVector at 0th index on both sides.
     void combinePagedVectors();
 
+    /// SpillableState
+    [[nodiscard]] size_t residentBytes() const override;
+    [[nodiscard]] bool isEvicted() const override;
+    void evictState() override;
+    void reloadState() override;
+    [[nodiscard]] uint64_t coldnessKey() const override;
+
 private:
     std::vector<std::unique_ptr<PagedVector>> leftPagedVectors;
     std::vector<std::unique_ptr<PagedVector>> rightPagedVectors;
     std::mutex combinePagedVectorsMutex;
+
+    /// Per-slice spill arena (only created when spilling is enabled); all PagedVectors are pinned to its BufferManager.
+    std::shared_ptr<SpillManager> spillManager;
+    std::shared_ptr<ArenaMemoryResource> spillArena;
+    std::shared_ptr<BufferManager> spillBufferManager;
+    bool spillEnabled{false};
+    std::atomic<bool> spillEvicted{false};
 };
 }

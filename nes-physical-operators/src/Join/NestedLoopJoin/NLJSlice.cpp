@@ -14,30 +14,122 @@
 
 #include <Join/NestedLoopJoin/NLJSlice.hpp>
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <string>
 #include <utility>
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/PagedVector/PagedVector.hpp>
 #include <Join/StreamJoinUtil.hpp>
+#include <Runtime/BufferManager.hpp>
+#include <Runtime/Spill/ArenaMemoryResource.hpp>
+#include <Runtime/Spill/SpillManager.hpp>
 #include <SliceStore/Slice.hpp>
 
 namespace NES
 {
 
-NLJSlice::NLJSlice(const SliceStart sliceStart, const SliceEnd sliceEnd, const uint64_t numberOfWorkerThreads) : Slice(sliceStart, sliceEnd)
+namespace
 {
-    for (uint64_t i = 0; i < numberOfWorkerThreads; ++i)
+std::atomic<uint64_t> nljSpillSliceCounter{0};
+/// The per-slice BufferManager's pooled area is unused (PagedVector allocates via getUnpooledBuffer, which routes
+/// through the arena), so it is kept tiny; this page size only sizes that unused pooled area.
+constexpr uint32_t NLJ_SLICE_POOL_PAGE_SIZE = 4096;
+constexpr uint32_t NLJ_SLICE_POOL_BUFFERS = 2;
+}
+
+NLJSlice::NLJSlice(
+    const SliceStart sliceStart, const SliceEnd sliceEnd, const uint64_t numberOfWorkerThreads, std::shared_ptr<SpillManager> spillManager)
+    : Slice(sliceStart, sliceEnd)
+    , spillManager(std::move(spillManager))
+    , spillEnabled(this->spillManager != nullptr && this->spillManager->configuration().enabled)
+{
+    /// When spilling is enabled, create the slice's arena up front so every PagedVector can be pinned to it.
+    AbstractBufferProvider* sliceProvider = nullptr;
+    if (spillEnabled)
     {
-        leftPagedVectors.emplace_back(std::make_unique<PagedVector>());
+        const auto& config = this->spillManager->configuration();
+        const auto backingFile = config.spillDirectory + "/nes-nljslice-" + std::to_string(nljSpillSliceCounter.fetch_add(1)) + ".spill";
+        spillArena = std::make_shared<ArenaMemoryResource>(config.arenaMode, backingFile);
+        spillBufferManager = BufferManager::create(NLJ_SLICE_POOL_PAGE_SIZE, NLJ_SLICE_POOL_BUFFERS, spillArena);
+        sliceProvider = spillBufferManager.get();
     }
 
     for (uint64_t i = 0; i < numberOfWorkerThreads; ++i)
     {
-        rightPagedVectors.emplace_back(std::make_unique<PagedVector>());
+        auto pagedVector = std::make_unique<PagedVector>();
+        if (sliceProvider != nullptr)
+        {
+            pagedVector->setOwnBufferProvider(sliceProvider);
+        }
+        leftPagedVectors.emplace_back(std::move(pagedVector));
     }
+
+    for (uint64_t i = 0; i < numberOfWorkerThreads; ++i)
+    {
+        auto pagedVector = std::make_unique<PagedVector>();
+        if (sliceProvider != nullptr)
+        {
+            pagedVector->setOwnBufferProvider(sliceProvider);
+        }
+        rightPagedVectors.emplace_back(std::move(pagedVector));
+    }
+}
+
+NLJSlice::~NLJSlice()
+{
+    if (spillManager != nullptr)
+    {
+        spillManager->unregisterState(this);
+    }
+    /// Releasing the PagedVectors' TupleBuffers touches buffer control blocks that live in the arena; reload first so
+    /// that memory is valid rather than discarded (zero-fill) pages.
+    if (spillEvicted.load() && spillArena != nullptr)
+    {
+        spillArena->reload();
+        spillEvicted.store(false);
+    }
+}
+
+size_t NLJSlice::residentBytes() const
+{
+    if (spillEvicted.load() || spillArena == nullptr)
+    {
+        return 0;
+    }
+    return spillArena->liveBytes();
+}
+
+bool NLJSlice::isEvicted() const
+{
+    return spillEvicted.load();
+}
+
+void NLJSlice::evictState()
+{
+    if (spillArena != nullptr && !spillEvicted.load())
+    {
+        spillArena->evict();
+        spillEvicted.store(true);
+    }
+}
+
+void NLJSlice::reloadState()
+{
+    if (spillArena != nullptr && spillEvicted.load())
+    {
+        spillArena->reload();
+        spillEvicted.store(false);
+    }
+}
+
+uint64_t NLJSlice::coldnessKey() const
+{
+    return sliceEnd.getRawValue();
 }
 
 uint64_t NLJSlice::getNumberOfTuplesLeft() const

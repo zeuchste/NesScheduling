@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 #include <Identifiers/Identifiers.hpp>
+#include <Runtime/Spill/SpillManager.hpp>
 #include <Sequencing/SequenceData.hpp>
 #include <SliceStore/Slice.hpp>
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
@@ -44,6 +45,20 @@ void StreamJoinOperatorHandler::triggerSlices(
     /// combinations of slices for a given window to ensure that it has seen all tuples of the window.
     for (const auto& [windowInfo, allSlices] : slicesAndWindowInfo)
     {
+        /// emitSlicesToProbe hands raw pointers into these slices' state to the probe operator, which reads them
+        /// asynchronously. Pin them (reloading any evicted) and keep them pinned so the governor cannot evict a
+        /// triggered slice before the probe consumes it; the pin is released when the slice is garbage-collected.
+        if (spillManager != nullptr && spillManager->configuration().enabled)
+        {
+            for (const auto& slice : allSlices)
+            {
+                if (auto* spillable = dynamic_cast<SpillableState*>(slice.get()))
+                {
+                    spillManager->pin(*spillable);
+                }
+            }
+        }
+
         ChunkNumber::Underlying chunkNumber = ChunkNumber::INITIAL;
         for (const auto& sliceLeft : allSlices)
         {

@@ -107,8 +107,8 @@ AbstractBufferProvider* HashMapSlice::spillProviderOrNull()
         const auto& config = spillManager->configuration();
         const auto backingFile = config.spillDirectory + "/nes-slice-" + std::to_string(spillSliceCounter.fetch_add(1)) + ".spill";
         spillArena = std::make_shared<ArenaMemoryResource>(config.arenaMode, backingFile);
-        spillBufferManager = BufferManager::create(
-            static_cast<uint32_t>(createNewHashMapSliceArgs.pageSize), SLICE_POOL_BUFFERS, spillArena, BufferManager::DEFAULT_ALIGNMENT);
+        spillBufferManager
+            = BufferManager::create(static_cast<uint32_t>(createNewHashMapSliceArgs.pageSize), SLICE_POOL_BUFFERS, spillArena);
     }
     return spillBufferManager.get();
 }

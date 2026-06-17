@@ -43,6 +43,12 @@ public:
     /// Appends a new page to the pages vector if the last page is full.
     void appendPageIfFull(AbstractBufferProvider* bufferProvider, uint64_t capacity, uint64_t bufferSize);
 
+    /// Pins this paged vector's page allocations to a specific buffer provider, overriding the one passed to
+    /// appendPageIfFull. Used by spillable join slices so all of a slice's pages come from the slice's own arena-backed
+    /// BufferManager and can be evicted/reloaded as a unit. When unset (nullptr, the default), the call-site provider
+    /// is used, i.e. behaviour is unchanged.
+    void setOwnBufferProvider(AbstractBufferProvider* provider) { ownBufferProvider = provider; }
+
     /// Appends the pages of the given PagedVector with the pages of this PagedVector.
     void moveAllPages(PagedVector& other);
 
@@ -86,6 +92,9 @@ private:
 
         std::vector<TupleBufferWithCumulativeSum> pages;
     };
+
+    /// Optional pinned provider for all page allocations (see setOwnBufferProvider). Null => use the call-site provider.
+    AbstractBufferProvider* ownBufferProvider{nullptr};
 
     PagesWrapper pages;
 };

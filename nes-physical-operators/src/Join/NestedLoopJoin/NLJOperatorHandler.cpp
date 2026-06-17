@@ -49,12 +49,17 @@ NLJOperatorHandler::getCreateNewSlicesFunction(const CreateNewSlicesArguments&) 
     PRECONDITION(
         numberOfWorkerThreads > 0, "Number of worker threads not set for window based operator. Was setWorkerThreads() being called?");
     return std::function(
-        [numberOfWorkerThreads = numberOfWorkerThreads,
-         outputOriginId = outputOriginId](SliceStart sliceStart, SliceEnd sliceEnd) -> std::vector<std::shared_ptr<Slice>>
+        [numberOfWorkerThreads = numberOfWorkerThreads, outputOriginId = outputOriginId, spillManager = spillManager](
+            SliceStart sliceStart, SliceEnd sliceEnd) -> std::vector<std::shared_ptr<Slice>>
         {
             NES_TRACE(
                 "Creating new NLJ slice for sliceStart {} and sliceEnd {} for output origin {}", sliceStart, sliceEnd, outputOriginId);
-            return {std::make_shared<NLJSlice>(sliceStart, sliceEnd, numberOfWorkerThreads)};
+            auto slice = std::make_shared<NLJSlice>(sliceStart, sliceEnd, numberOfWorkerThreads, spillManager);
+            if (spillManager != nullptr && spillManager->configuration().enabled)
+            {
+                spillManager->registerState(slice);
+            }
+            return {slice};
         });
 }
 

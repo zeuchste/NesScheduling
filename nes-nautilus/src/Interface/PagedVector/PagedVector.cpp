@@ -31,12 +31,14 @@ namespace NES
 
 void PagedVector::appendPageIfFull(AbstractBufferProvider* bufferProvider, const uint64_t capacity, const uint64_t bufferSize)
 {
-    PRECONDITION(bufferProvider != nullptr, "EntrySize for a pagedVector has to be larger than 0!");
+    /// Use the pinned provider when set (spillable slice), otherwise the one passed at the call site.
+    auto* provider = ownBufferProvider != nullptr ? ownBufferProvider : bufferProvider;
+    PRECONDITION(provider != nullptr, "EntrySize for a pagedVector has to be larger than 0!");
     PRECONDITION(capacity > 0, "At least one tuple has to fit on a page!");
 
     if (pages.getNumberOfPages() == 0 || pages.getNumberOfTuplesLastPage() >= capacity)
     {
-        if (const auto page = bufferProvider->getUnpooledBuffer(bufferSize); page.has_value())
+        if (const auto page = provider->getUnpooledBuffer(bufferSize); page.has_value())
         {
             pages.addPage(page.value());
         }
