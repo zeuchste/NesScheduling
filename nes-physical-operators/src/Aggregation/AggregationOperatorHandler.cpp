@@ -82,6 +82,21 @@ void AggregationOperatorHandler::triggerSlices(
 {
     for (const auto& [windowInfo, allSlices] : slicesAndWindowInfo)
     {
+        /// This emits a buffer holding raw pointers into these slices' hash maps for the probe operator to read
+        /// asynchronously (later, in another task). Pin them (reloading any that were evicted) and keep them pinned: the
+        /// pin is intentionally not released here, so the governor cannot evict a triggered slice before the probe has
+        /// consumed it. The pin is dropped when the slice is destroyed (post-probe garbage collection unregisters it).
+        if (spillManager != nullptr && spillManager->configuration().enabled)
+        {
+            for (const auto& slice : allSlices)
+            {
+                if (auto* spillable = dynamic_cast<SpillableState*>(slice.get()))
+                {
+                    spillManager->pin(*spillable);
+                }
+            }
+        }
+
         /// Getting all hashmaps for each slice that has at least one tuple
         std::unique_ptr<ChainedHashMap> finalHashMap;
         std::vector<HashMap*> allHashMaps;

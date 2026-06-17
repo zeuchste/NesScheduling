@@ -65,8 +65,13 @@ std::shared_ptr<SpillManager::Entry> SpillManager::lookup(const SpillableState* 
 
 void SpillManager::pin(SpillableState& state)
 {
+    /// Unregistered states are not spillable (e.g. slices of operators that do not opt into spilling), so pinning them
+    /// is a no-op. The generic build path may call pin() on any slice.
     const auto entry = lookup(&state);
-    PRECONDITION(entry != nullptr, "pin() called on an unregistered SpillableState");
+    if (entry == nullptr)
+    {
+        return;
+    }
     const std::lock_guard guard(entry->residencyMutex);
     /// Pin before any access: bump the count first (so a concurrent eviction sees it pinned), then reload if needed.
     entry->pinCount.fetch_add(1);
@@ -79,7 +84,10 @@ void SpillManager::pin(SpillableState& state)
 void SpillManager::unpin(SpillableState& state)
 {
     const auto entry = lookup(&state);
-    PRECONDITION(entry != nullptr, "unpin() called on an unregistered SpillableState");
+    if (entry == nullptr)
+    {
+        return;
+    }
     USED_IN_DEBUG const auto previous = entry->pinCount.fetch_sub(1);
     INVARIANT(previous > 0, "unpin() called more times than pin() for a SpillableState");
 }
