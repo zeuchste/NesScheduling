@@ -21,6 +21,8 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
+#include <string>
+#include <Runtime/Spill/ArenaMemoryResource.hpp>
 
 namespace NES
 {
@@ -60,6 +62,10 @@ struct SpillConfiguration
     double highWatermark = DEFAULT_HIGH_WATERMARK;
     /// ... and keep evicting the coldest unpinned units down to lowWatermark * budget.
     double lowWatermark = DEFAULT_LOW_WATERMARK;
+    /// Directory under which per-slice arena backing files are created.
+    std::string spillDirectory = "/tmp";
+    /// Backend used by per-slice arenas (Anon = vmcache-faithful explicit pwrite/madvise/pread; the production default).
+    ArenaMemoryResource::Mode arenaMode = ArenaMemoryResource::Mode::Anon;
 };
 
 /// Process-wide governor that decides when and what to spill. Operators do not evict their own state; they only
@@ -102,9 +108,12 @@ public:
 
 private:
     /// Per-unit bookkeeping. Stored behind a shared_ptr so its address (and mutex) stay stable across registry rehash.
+    /// The state is held by weak_ptr: the SliceStore owns the slice's lifetime, so the governor must not keep it alive.
+    /// Eviction/pin lock the weak_ptr to a temporary shared_ptr, which keeps the unit alive for the duration of the I/O
+    /// and returns null (skip) if the unit is concurrently being destroyed.
     struct Entry
     {
-        std::shared_ptr<SpillableState> state;
+        std::weak_ptr<SpillableState> state;
         std::atomic<uint32_t> pinCount{0};
         std::mutex residencyMutex; /// serializes evict/reload and pin-reload for this unit
     };

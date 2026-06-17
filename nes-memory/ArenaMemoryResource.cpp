@@ -128,6 +128,7 @@ ArenaMemoryResource::~ArenaMemoryResource()
 void* ArenaMemoryResource::do_allocate(size_t bytes, size_t alignment)
 {
     PRECONDITION(alignment <= pageSize(), "ArenaMemoryResource: alignment {} larger than a page {} is unsupported", alignment, pageSize());
+    const std::lock_guard guard(mutex);
     const size_t mapLen = roundUpToPage(bytes);
     void* ptr = nullptr;
     if (mode == Mode::Anon)
@@ -154,6 +155,7 @@ void* ArenaMemoryResource::do_allocate(size_t bytes, size_t alignment)
 
 void ArenaMemoryResource::do_deallocate(void* p, size_t /*bytes*/, size_t /*alignment*/)
 {
+    const std::lock_guard guard(mutex);
     for (auto& region : regions)
     {
         if (region.live && region.ptr == p)
@@ -173,6 +175,7 @@ bool ArenaMemoryResource::do_is_equal(const std::pmr::memory_resource& other) co
 
 void ArenaMemoryResource::evict(uint64_t ioLatencyUsPer4k)
 {
+    const std::lock_guard guard(mutex);
     if (evicted)
     {
         return;
@@ -200,6 +203,7 @@ void ArenaMemoryResource::evict(uint64_t ioLatencyUsPer4k)
 
 void ArenaMemoryResource::reload(uint64_t ioLatencyUsPer4k)
 {
+    const std::lock_guard guard(mutex);
     if (!evicted)
     {
         return;

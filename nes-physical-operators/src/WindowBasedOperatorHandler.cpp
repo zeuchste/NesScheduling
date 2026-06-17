@@ -45,6 +45,7 @@ WindowBasedOperatorHandler::WindowBasedOperatorHandler(
 void WindowBasedOperatorHandler::start(PipelineExecutionContext& pipelineExecutionContext, uint32_t)
 {
     numberOfWorkerThreads = pipelineExecutionContext.getNumberOfWorkerThreads();
+    spillManager = pipelineExecutionContext.getSpillManager();
 }
 
 void WindowBasedOperatorHandler::stop(QueryTerminationType, PipelineExecutionContext&)

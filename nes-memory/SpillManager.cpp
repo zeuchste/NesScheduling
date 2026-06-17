@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -67,11 +68,12 @@ void SpillManager::pin(SpillableState& state)
     const auto entry = lookup(&state);
     PRECONDITION(entry != nullptr, "pin() called on an unregistered SpillableState");
     const std::lock_guard guard(entry->residencyMutex);
+    /// Pin before any access: bump the count first (so a concurrent eviction sees it pinned), then reload if needed.
+    entry->pinCount.fetch_add(1);
     if (state.isEvicted())
     {
         state.reloadState();
     }
-    entry->pinCount.fetch_add(1);
 }
 
 void SpillManager::unpin(SpillableState& state)
@@ -88,7 +90,10 @@ size_t SpillManager::residentBytes() const
     size_t total = 0;
     for (const auto& [ptr, entry] : registry)
     {
-        total += entry->state->residentBytes();
+        if (const auto state = entry->state.lock())
+        {
+            total += state->residentBytes();
+        }
     }
     return total;
 }
@@ -116,42 +121,57 @@ size_t SpillManager::maybeSpill()
 
 size_t SpillManager::evictDownTo(size_t targetBytes)
 {
-    /// Snapshot the registry under a brief read-lock, then do the actual evict I/O outside it (under each unit's own
-    /// residency mutex) so disk I/O never serializes the whole registry.
-    std::vector<std::shared_ptr<Entry>> candidates;
+    /// Snapshot live candidates (entry + a strong ref + its coldness) under a brief read-lock, then do the actual evict
+    /// I/O outside it (under each unit's residency mutex) so disk I/O never serializes the whole registry. Holding the
+    /// strong ref keeps each unit alive across the evict I/O; units being concurrently destroyed fail to lock and are skipped.
+    struct Candidate
+    {
+        std::shared_ptr<Entry> entry;
+        std::shared_ptr<SpillableState> state;
+        uint64_t coldness;
+    };
+
+    std::vector<Candidate> candidates;
     size_t resident = 0;
     {
         const std::shared_lock lock(registryMutex);
         candidates.reserve(registry.size());
         for (const auto& [ptr, entry] : registry)
         {
-            resident += entry->state->residentBytes();
-            candidates.push_back(entry);
+            if (auto state = entry->state.lock())
+            {
+                resident += state->residentBytes();
+                candidates.push_back({entry, std::move(state), 0});
+            }
         }
     }
     if (resident <= targetBytes)
     {
         return 0;
     }
+    for (auto& candidate : candidates)
+    {
+        candidate.coldness = candidate.state->coldnessKey();
+    }
 
     /// Coldest first (smallest coldnessKey is evicted first).
-    std::ranges::sort(candidates, [](const auto& lhs, const auto& rhs) { return lhs->state->coldnessKey() < rhs->state->coldnessKey(); });
+    std::ranges::sort(candidates, [](const auto& lhs, const auto& rhs) { return lhs.coldness < rhs.coldness; });
 
     size_t freed = 0;
-    for (const auto& entry : candidates)
+    for (const auto& candidate : candidates)
     {
         if (resident - freed <= targetBytes)
         {
             break;
         }
-        const std::lock_guard guard(entry->residencyMutex);
+        const std::lock_guard guard(candidate.entry->residencyMutex);
         /// Re-check under the residency mutex: skip pinned or already-evicted units.
-        if (entry->pinCount.load() != 0 || entry->state->isEvicted())
+        if (candidate.entry->pinCount.load() != 0 || candidate.state->isEvicted())
         {
             continue;
         }
-        const auto bytes = entry->state->residentBytes();
-        entry->state->evictState();
+        const auto bytes = candidate.state->residentBytes();
+        candidate.state->evictState();
         freed += bytes;
     }
     return freed;

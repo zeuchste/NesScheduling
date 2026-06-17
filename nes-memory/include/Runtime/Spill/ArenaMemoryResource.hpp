@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory_resource>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -37,8 +38,10 @@ namespace NES
 ///   - FileBacked: MAP_SHARED on a backing file; evict = msync + madvise(DONTNEED); reload = madvise(WILLNEED) and
 ///                 touch the pages so the OS pages them back in.
 ///
-/// This type is not thread-safe; callers (the SpillManager / per-slice residency mutex) serialize evict/reload with
-/// access to the backed memory.
+/// Allocation/deallocation are guarded by an internal mutex, so multiple worker threads may allocate from one arena
+/// concurrently (the page-boundary allocations are low frequency). evict/reload must not run concurrently with access
+/// to the backed memory; the SpillManager's pin protocol guarantees this (a slice is reloaded+pinned before access and
+/// only evicted while unpinned).
 class ArenaMemoryResource final : public std::pmr::memory_resource
 {
 public:
@@ -85,6 +88,7 @@ private:
         bool live;
     };
 
+    mutable std::mutex mutex; /// guards regions/fileCursor/liveByteCount and evict/reload
     Mode mode;
     std::string backingPath;
     int fd{-1};

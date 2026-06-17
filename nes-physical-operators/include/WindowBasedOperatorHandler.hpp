@@ -22,6 +22,7 @@
 #include <Identifiers/Identifiers.hpp>
 #include <Runtime/Execution/OperatorHandler.hpp>
 #include <Runtime/QueryTerminationType.hpp>
+#include <Runtime/Spill/SpillManager.hpp>
 #include <Sequencing/SequenceData.hpp>
 #include <SliceStore/Slice.hpp>
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
@@ -98,5 +99,8 @@ protected:
     uint64_t numberOfWorkerThreads;
     const OriginId outputOriginId;
     const std::vector<OriginId> inputOrigins;
+    /// Process-wide spill governor, obtained from the pipeline execution context in start(). Null when state spilling is
+    /// not configured; when set and enabled, slices created by this handler are registered with it and become spillable.
+    std::shared_ptr<SpillManager> spillManager;
 };
 }
