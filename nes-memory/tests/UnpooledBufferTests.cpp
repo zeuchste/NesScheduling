@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <ctime>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
@@ -65,8 +66,11 @@ void runAllocations(
     const size_t maxAllocationSize,
     const size_t numberOfThreads)
 {
-    /// Creating component under test. We do not care about the bufferSize and the number of buffers, as we test getUnpooledBuffer()
-    const auto bufferManager = BufferManager::create(1, 1);
+    /// Creating component under test. We do not care about the bufferSize and the number of buffers, as we test getUnpooledBuffer().
+    /// These stress tests deliberately allocate tens of GiB of (mostly untouched) unpooled memory to exercise chunk
+    /// management, so we opt out of the unpooled budget here (the budget itself is covered by a dedicated test below).
+    const auto bufferManager = BufferManager::create(
+        1, 1, std::make_shared<NesDefaultMemoryAllocator>(), BufferManager::DEFAULT_ALIGNMENT, std::numeric_limits<size_t>::max());
 
     /// Creating random allocation sizes
     auto randomAllocations = createRandomSizeAllocations(numberOfRandomAllocationSizes, minAllocationSize, maxAllocationSize);
@@ -143,6 +147,45 @@ TEST(UnpooledBufferTests, MultipleUnpooledBufferMultithreaded)
     constexpr auto maxAllocationSize = 500 * 1024; /// 500 KiB
     constexpr auto numberOfThreads = 8;
     runAllocations(numberOfRandomAllocationSizes, minAllocationSize, maxAllocationSize, numberOfThreads);
+}
+
+/// Unpooled buffers are heap-backed and were previously unbounded, so runaway operator state could OOM-kill the worker.
+/// With an explicit budget, allocation must be refused (returns std::nullopt) once the budget is reached, and must
+/// succeed again once held buffers are released (the accounting is decremented on chunk deallocation).
+TEST(UnpooledBufferTests, UnpooledMemoryBudgetIsEnforcedAndReleased)
+{
+    /// Tiny explicit unpooled budget. The pooled pool (1 buffer of 1 B) is irrelevant; we only exercise getUnpooledBuffer.
+    constexpr size_t unpooledBudgetInBytes = 4 * 1024 * 1024; /// 4 MiB
+    const auto bufferManager = BufferManager::create(
+        1, 1, std::make_shared<NesDefaultMemoryAllocator>(), BufferManager::DEFAULT_ALIGNMENT, unpooledBudgetInBytes);
+
+    constexpr size_t allocationSize = 64 * 1024; /// 64 KiB
+    constexpr size_t maxAllocations = 100 * 1000; /// generous upper bound; we expect rejection well before this
+
+    std::vector<TupleBuffer> heldBuffers;
+    bool sawRejection = false;
+    for (size_t i = 0; i < maxAllocations; ++i)
+    {
+        auto buffer = bufferManager->getUnpooledBuffer(allocationSize);
+        if (not buffer.has_value())
+        {
+            sawRejection = true;
+            break;
+        }
+        heldBuffers.emplace_back(std::move(buffer.value()));
+    }
+
+    /// The budget must be enforced rather than allowing unbounded allocation ...
+    ASSERT_TRUE(sawRejection);
+    /// ... yet some allocations must succeed within the budget ...
+    ASSERT_FALSE(heldBuffers.empty());
+    /// ... and the requested payload of all held buffers stays within the budget.
+    ASSERT_LE(heldBuffers.size() * allocationSize, unpooledBudgetInBytes);
+
+    /// Releasing all held buffers frees the chunks and decrements the accounting, so allocation succeeds again.
+    heldBuffers.clear();
+    const auto bufferAfterRelease = bufferManager->getUnpooledBuffer(allocationSize);
+    ASSERT_TRUE(bufferAfterRelease.has_value());
 }
 
 }

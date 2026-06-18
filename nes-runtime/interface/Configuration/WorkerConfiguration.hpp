@@ -49,6 +49,15 @@ public:
            "Number buffers in global buffer pool.",
            {std::make_shared<NumberValidation>()}};
 
+    /// Hard cap on total unpooled (variable-sized) buffer memory in bytes, used by operator state (hash maps, paged
+    /// vectors, var-sized data). 0 = auto: a fraction of physical RAM minus the pooled pool. On breach, the requesting
+    /// query fails with CannotAllocateBuffer instead of the worker running out of physical memory.
+    UIntOption unpooledMemoryLimitInBytes
+        = {"unpooled_memory_limit_in_bytes",
+           "0",
+           "Hard cap on total unpooled buffer memory in bytes (0 = auto: a fraction of physical RAM minus the pooled pool).",
+           {std::make_shared<NumberValidation>()}};
+
     /// Indicates how many buffers a single data source can allocate. This property controls the backpressure mechanism as a data source that can't allocate new records can't ingest more data.
     UIntOption defaultMaxInflightBuffers
         = {"default_max_inflight_buffers",
@@ -73,6 +82,7 @@ private:
             &defaultQueryOptimization,
             &network,
             &numberOfBuffersInGlobalBufferManager,
+            &unpooledMemoryLimitInBytes,
             &defaultMaxInflightBuffers,
             &dumpQueryCompilationIR,
             &dumpGraph};

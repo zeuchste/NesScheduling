@@ -37,7 +37,10 @@ std::unique_ptr<NodeEngine> NodeEngineBuilder::build(const Host& host)
 {
     auto bufferManager = BufferManager::create(
         workerConfiguration.defaultQueryExecution.operatorBufferSize.getValue(),
-        workerConfiguration.numberOfBuffersInGlobalBufferManager.getValue());
+        workerConfiguration.numberOfBuffersInGlobalBufferManager.getValue(),
+        std::make_shared<NesDefaultMemoryAllocator>(),
+        BufferManager::DEFAULT_ALIGNMENT,
+        workerConfiguration.unpooledMemoryLimitInBytes.getValue());
     auto queryLog = std::make_shared<QueryLog>();
 
     auto queryEngine = std::make_unique<QueryEngine>(workerConfiguration.queryEngine, statisticsListener, queryLog, bufferManager, host);
