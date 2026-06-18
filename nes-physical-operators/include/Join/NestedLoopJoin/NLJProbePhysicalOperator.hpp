@@ -24,8 +24,8 @@
 #include <Interface/RecordBuffer.hpp>
 #include <Join/StreamJoinProbePhysicalOperator.hpp>
 #include <Join/StreamJoinUtil.hpp>
+#include <Operators/Windows/WindowMetaData.hpp>
 #include <Runtime/Execution/OperatorHandler.hpp>
-#include <Windowing/WindowMetaData.hpp>
 
 namespace NES
 {
@@ -39,8 +39,8 @@ public:
         PhysicalFunction joinFunction,
         WindowMetaData windowMetaData,
         const JoinSchema& joinSchema,
-        std::shared_ptr<TupleBufferRef> leftMemoryProvider,
-        std::shared_ptr<TupleBufferRef> rightMemoryProvider,
+        std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout,
+        std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
         std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
         std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames);
 
@@ -50,15 +50,15 @@ protected:
     void performNLJ(
         const PagedVectorRef& outerPagedVector,
         const PagedVectorRef& innerPagedVector,
-        TupleBufferRef& outerMemoryProvider,
-        TupleBufferRef& innerMemoryProvider,
+        PagedVectorTupleLayout& outerTupleLayout,
+        PagedVectorTupleLayout& innerTupleLayout,
         const std::vector<Record::RecordFieldIdentifier>& outerKeyFieldNames,
         const std::vector<Record::RecordFieldIdentifier>& innerKeyFieldNames,
         ExecutionContext& executionCtx,
         const nautilus::val<Timestamp>& windowStart,
         const nautilus::val<Timestamp>& windowEnd) const;
-    std::shared_ptr<TupleBufferRef> leftMemoryProvider;
-    std::shared_ptr<TupleBufferRef> rightMemoryProvider;
+    std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout;
+    std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout;
     std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames;
     std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames;
 };
