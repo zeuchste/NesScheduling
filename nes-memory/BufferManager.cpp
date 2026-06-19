@@ -50,8 +50,10 @@ BufferManager::BufferManager(
     const size_t unpooledMemoryLimitInBytes)
     : availableBuffers(numOfBuffers)
     /// 0 means "unbounded" at this layer; the worker derives a concrete budget in NodeEngineBuilder and passes it here.
+    /// The UnpooledChunksManager holds the memory_resource by reference; this BufferManager owns the shared_ptr (member
+    /// `memoryResource` below) and outlives the manager, so the reference stays valid for the manager's whole lifetime.
     , unpooledChunksManager(std::make_shared<UnpooledChunksManager>(
-          memoryResource, unpooledMemoryLimitInBytes == 0 ? std::numeric_limits<size_t>::max() : unpooledMemoryLimitInBytes))
+          *memoryResource, unpooledMemoryLimitInBytes == 0 ? std::numeric_limits<size_t>::max() : unpooledMemoryLimitInBytes))
     , bufferSize(bufferSize)
     , numOfBuffers(numOfBuffers)
     , memoryResource(std::move(memoryResource))

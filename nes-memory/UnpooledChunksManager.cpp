@@ -36,9 +36,8 @@
 
 namespace NES
 {
-UnpooledChunksManager::UnpooledChunksManager(
-    std::shared_ptr<std::pmr::memory_resource> memoryResource, const size_t unpooledMemoryBudgetInBytes)
-    : memoryResource(std::move(memoryResource)), unpooledMemoryBudgetInBytes(unpooledMemoryBudgetInBytes)
+UnpooledChunksManager::UnpooledChunksManager(std::pmr::memory_resource& memoryResource, const size_t unpooledMemoryBudgetInBytes)
+    : memoryResource(memoryResource), unpooledMemoryBudgetInBytes(unpooledMemoryBudgetInBytes)
 {
 }
 
@@ -133,7 +132,7 @@ UnpooledChunksManager::allocateSpace(const std::thread::id threadId, const size_
         return {};
     }
 
-    auto* const newlyAllocatedMemory = static_cast<uint8_t*>(memoryResource->allocate(newAllocationSize, alignment));
+    auto* const newlyAllocatedMemory = static_cast<uint8_t*>(memoryResource.allocate(newAllocationSize, alignment));
     if (newlyAllocatedMemory == nullptr)
     {
         currentlyAllocatedUnpooledBytes.fetch_sub(newAllocationSize, std::memory_order_relaxed);
@@ -167,7 +166,7 @@ UnpooledChunksManager::getUnpooledBuffer(const size_t neededSize, size_t alignme
         = this->allocateSpace(threadId, alignedBufferSizePlusControlBlock, alignment);
 
     /// allocateSpace returns a null pair when the budget is exhausted or the underlying allocation failed. Signal this
-    /// to the caller as an empty optional (callers turn it into CannotAllocateBuffer/BufferAllocationFailure) instead of
+    /// to the caller as an empty optional (callers turn it into BufferAllocationFailure) instead of
     /// constructing a TupleBuffer over a null payload.
     if (localMemoryForNewTupleBuffer == nullptr)
     {
@@ -183,7 +182,7 @@ UnpooledChunksManager::getUnpooledBuffer(const size_t neededSize, size_t alignme
     auto memSegment = std::make_unique<detail::MemorySegment>(
         localMemoryForNewTupleBuffer + controlBlockSize,
         alignedBufferSize,
-        [copyOfMemoryResource = this->memoryResource,
+        [&memoryResource = this->memoryResource,
          copyOLastChunkPtr = localKeyForUnpooledBufferChunk,
          copyOfChunk = chunk,
          copyOfAlignment = alignment,
@@ -204,8 +203,7 @@ UnpooledChunksManager::getUnpooledBuffer(const size_t neededSize, size_t alignme
                 const auto& extractedChunkControlBlock = extractedChunk.mapped();
                 lockedLocalUnpooledBufferData->lastAllocateChunkKey = nullptr;
                 lockedLocalUnpooledBufferData.unlock();
-                copyOfMemoryResource->deallocate(
-                    extractedChunkControlBlock.startOfChunk, extractedChunkControlBlock.totalSize, copyOfAlignment);
+                memoryResource.deallocate(extractedChunkControlBlock.startOfChunk, extractedChunkControlBlock.totalSize, copyOfAlignment);
                 allocatedBytes.fetch_sub(extractedChunkControlBlock.totalSize, std::memory_order_relaxed);
             }
         });

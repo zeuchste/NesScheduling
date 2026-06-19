@@ -145,7 +145,7 @@ void HJOperatorHandler::emitSlicesToProbe(
     const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
     if (not tupleBufferVal.has_value())
     {
-        throw CannotAllocateBuffer("{}B for the hash join window trigger were requested", neededBufferSize);
+        throw BufferAllocationFailure("{}B for the hash join window trigger were requested", neededBufferSize);
     }
 
     /// As we are here "emitting" a buffer, we have to set the originId, the seq number, the watermark and the "number of tuples".

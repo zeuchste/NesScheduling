@@ -79,7 +79,7 @@ EXCEPTION(DistributedFailure, 2303, "distributed failure")
 EXCEPTION(BufferAllocationFailure, 3000, "buffer allocation failure")
 EXCEPTION(QueryNotRegistered, 3001, "query not registered")
 EXCEPTION(CannotFormatMalformedStringValue, 3002, "cannot format malformed string value")
-EXCEPTION(CannotAllocateBuffer, 3003, "cannot allocate buffer")
+/// 3003 was CannotAllocateBuffer; merged into BufferAllocationFailure (3000). Code retired to avoid renumbering.
 EXCEPTION(SkippingDelayedTaskDuringShutdown, 3004, "skipping delayed task during shutdown")
 EXCEPTION(TuplesTooLargeForPipelineBufferSize, 3005, "tuples too large for pipeline buffer size")
 EXCEPTION(InferenceRuntimeFailure, 3006, "inference runtime failure")

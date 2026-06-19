@@ -155,12 +155,12 @@ TEST(UnpooledBufferTests, MultipleUnpooledBufferMultithreaded)
 TEST(UnpooledBufferTests, UnpooledMemoryBudgetIsEnforcedAndReleased)
 {
     /// Tiny explicit unpooled budget. The pooled pool (1 buffer of 1 B) is irrelevant; we only exercise getUnpooledBuffer.
-    constexpr size_t unpooledBudgetInBytes = 4 * 1024 * 1024; /// 4 MiB
+    constexpr size_t unpooledBudgetInBytes = size_t{4} * 1024 * 1024; /// 4 MiB
     const auto bufferManager = BufferManager::create(
         1, 1, std::make_shared<NesDefaultMemoryAllocator>(), BufferManager::DEFAULT_ALIGNMENT, unpooledBudgetInBytes);
 
-    constexpr size_t allocationSize = 64 * 1024; /// 64 KiB
-    constexpr size_t maxAllocations = 100 * 1000; /// generous upper bound; we expect rejection well before this
+    constexpr size_t allocationSize = size_t{64} * 1024; /// 64 KiB
+    constexpr size_t maxAllocations = size_t{100} * 1000; /// generous upper bound; we expect rejection well before this
 
     std::vector<TupleBuffer> heldBuffers;
     bool sawRejection = false;

@@ -89,12 +89,15 @@ public:
     /// @param memoryResource resource for allocating and deallocating memory
     /// @param unpooledMemoryLimitInBytes hard cap on total unpooled (variable-sized) buffer memory. 0 means unbounded.
     ///        On breach, getUnpooledBuffer returns nullopt. The worker derives a concrete cap in NodeEngineBuilder.
+    /// NOLINTBEGIN(fuchsia-default-arguments-declarations): create() is a widely-used test/factory convenience; a
+    /// non-defaulted parameter cannot follow the defaulted memoryResource, so the trailing defaults are kept intentionally.
     static std::shared_ptr<BufferManager> create(
         uint32_t bufferSize = DEFAULT_BUFFER_SIZE,
         uint32_t numOfBuffers = DEFAULT_NUMBER_OF_BUFFERS,
         const std::shared_ptr<std::pmr::memory_resource>& memoryResource = std::make_shared<NesDefaultMemoryAllocator>(),
         uint32_t withAlignment = DEFAULT_ALIGNMENT,
         size_t unpooledMemoryLimitInBytes = 0);
+    /// NOLINTEND(fuchsia-default-arguments-declarations)
 
     BufferManager(const BufferManager&) = delete;
     BufferManager& operator=(const BufferManager&) = delete;

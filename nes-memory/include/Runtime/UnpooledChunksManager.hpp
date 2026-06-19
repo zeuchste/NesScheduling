@@ -18,7 +18,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
-#include <limits>
 #include <memory>
 #include <memory_resource>
 #include <optional>
@@ -43,12 +42,13 @@ class UnpooledChunksManager
     static constexpr auto NUM_PRE_ALLOCATED_CHUNKS = 10;
     static constexpr auto ROLLING_AVERAGE_UNPOOLED_BUFFER_SIZE = 100;
 
-    /// Needed for allocating and deallocating memory
-    std::shared_ptr<std::pmr::memory_resource> memoryResource;
+    /// Needed for allocating and deallocating memory. Held by reference: the owning BufferManager (kept alive by the
+    /// TupleBuffer's recycler) owns both this manager and the memory_resource, so the resource always outlives us.
+    std::pmr::memory_resource& memoryResource;
 
     /// Hard cap on the total bytes that may be allocated for unpooled chunks. Once exceeded, getUnpooledBuffer
     /// returns std::nullopt instead of allocating, so the requesting query fails cleanly (via the callers'
-    /// CannotAllocateBuffer/BufferAllocationFailure paths) rather than the worker running out of physical memory.
+    /// BufferAllocationFailure paths) rather than the worker running out of physical memory.
     /// std::numeric_limits<size_t>::max() means "unbounded" (the historic behaviour, e.g. for tests).
     size_t unpooledMemoryBudgetInBytes;
 
@@ -99,8 +99,7 @@ class UnpooledChunksManager
     std::shared_ptr<folly::Synchronized<UnpooledChunk>> getChunk(std::thread::id threadId);
 
 public:
-    explicit UnpooledChunksManager(
-        std::shared_ptr<std::pmr::memory_resource> memoryResource, size_t unpooledMemoryBudgetInBytes = std::numeric_limits<size_t>::max());
+    explicit UnpooledChunksManager(std::pmr::memory_resource& memoryResource, size_t unpooledMemoryBudgetInBytes);
     size_t getNumberOfUnpooledBuffers() const;
 
     /// Total bytes currently allocated for unpooled chunks, and the configured budget. Exposed for diagnostics/tests.

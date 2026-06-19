@@ -55,7 +55,7 @@ public:
 
     /// Share of totalMemoryInBytes reserved for unpooled (variable-sized) operator state (hash maps, paged vectors,
     /// var-sized data); the remainder sizes the pooled pool. Must be in (0, 1). On breach of the unpooled share, the
-    /// requesting query fails cleanly (CannotAllocateBuffer/BufferAllocationFailure) instead of the worker OOM-ing.
+    /// requesting query fails cleanly (BufferAllocationFailure) instead of the worker OOM-ing.
     FloatOption unpooledMemoryFraction
         = {"unpooled_memory_fraction",
            "0.7",

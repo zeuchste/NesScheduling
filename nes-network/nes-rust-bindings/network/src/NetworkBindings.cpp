@@ -68,7 +68,7 @@ void TupleBufferBuilder::addChildBuffer(const rust::Slice<const uint8_t> child)
     auto childBuffer = bufferProvider.getUnpooledBuffer(child.size());
     if (!childBuffer)
     {
-        throw NES::CannotAllocateBuffer("allocating child buffer");
+        throw NES::BufferAllocationFailure("allocating child buffer");
     }
 
     INVARIANT(

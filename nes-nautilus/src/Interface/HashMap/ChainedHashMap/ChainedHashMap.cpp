@@ -137,7 +137,7 @@ std::span<std::byte> ChainedHashMap::allocateSpaceForVarSized(AbstractBufferProv
         auto varSizedBuffer = bufferProvider->getUnpooledBuffer(neededSize * NUMBER_OF_PRE_ALLOCATED_VAR_SIZED_ITEMS);
         if (not varSizedBuffer)
         {
-            throw CannotAllocateBuffer(
+            throw BufferAllocationFailure(
                 "Could not allocate memory for ChainedHashMap of size {}",
                 std::to_string(neededSize * NUMBER_OF_PRE_ALLOCATED_VAR_SIZED_ITEMS));
         }
@@ -164,7 +164,7 @@ AbstractHashMapEntry* ChainedHashMap::insertEntry(const HashFunction::HashValue:
         const auto entryBuffer = bufferProvider->getUnpooledBuffer(totalSpace);
         if (not entryBuffer)
         {
-            throw CannotAllocateBuffer("Could not allocate memory for ChainedHashMap of size {}", std::to_string(totalSpace));
+            throw BufferAllocationFailure("Could not allocate memory for ChainedHashMap of size {}", std::to_string(totalSpace));
         }
         entrySpace = entryBuffer.value();
         entries = reinterpret_cast<ChainedHashMapEntry**>(entrySpace.getAvailableMemoryArea().data());
@@ -180,7 +180,7 @@ AbstractHashMapEntry* ChainedHashMap::insertEntry(const HashFunction::HashValue:
         auto newPage = bufferProvider->getUnpooledBuffer(pageSize);
         if (not newPage)
         {
-            throw CannotAllocateBuffer("Could not allocate memory for new page in ChainedHashMap of size {}", std::to_string(pageSize));
+            throw BufferAllocationFailure("Could not allocate memory for new page in ChainedHashMap of size {}", std::to_string(pageSize));
         }
         std::ranges::fill(newPage.value().getAvailableMemoryArea(), std::byte{0});
         storageSpace.emplace_back(newPage.value());

@@ -108,7 +108,7 @@ void AggregationOperatorHandler::triggerSlices(
         const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
         if (not tupleBufferVal.has_value())
         {
-            throw CannotAllocateBuffer("{}B for the hash join window trigger were requested", neededBufferSize);
+            throw BufferAllocationFailure("{}B for the hash join window trigger were requested", neededBufferSize);
         }
         auto tupleBuffer = tupleBufferVal.value();
 

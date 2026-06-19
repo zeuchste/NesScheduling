@@ -14,6 +14,7 @@
 
 #include <Runtime/NodeEngineBuilder.hpp>
 
+#include <algorithm>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
@@ -62,6 +63,10 @@ std::optional<size_t> readMemoryLimitFromFile(const char* path)
 /// Best-effort detection of the memory the OOM-killer will actually enforce: the cgroup limit when containerized
 /// (v2 first, then v1), otherwise physical RAM. A cgroup limit is only honoured when it is below physical RAM, since
 /// an unset limit is reported as a huge sentinel rather than "max" on some kernels.
+/// WARNING: in a Docker (or otherwise containerized) deployment sysconf(_SC_PHYS_PAGES) reports the *host* physical
+/// memory, not the container's limit. If the cgroup files are unreadable/absent we therefore fall back to the host
+/// size and may size the pools far larger than the container allows -- which then OOM-kills the worker. If you are
+/// chasing a phantom OOM in a container, set total_memory_in_bytes explicitly rather than trusting this auto-detection.
 size_t detectAvailableMemoryBytes()
 {
     const auto physicalMemoryInBytes = static_cast<size_t>(sysconf(_SC_PHYS_PAGES)) * static_cast<size_t>(sysconf(_SC_PAGE_SIZE));
@@ -81,12 +86,14 @@ struct MemoryBudgets
     size_t unpooledLimitInBytes;
 };
 
-/// Splits a single memory ceiling into the pooled-pool buffer count and the unpooled budget. The unpooled share is
-/// totalMemoryInBytes * unpooledFraction; the remainder sizes the pooled pool. By construction the two sum to the
-/// total, so neither can independently exceed it. totalMemoryInBytes == 0 means auto-detect.
-MemoryBudgets resolveMemoryBudgets(size_t totalMemoryInBytes, const uint32_t bufferSize, const double unpooledFraction)
+/// Resolve the pooled/unpooled memory budgets from the three user-facing knobs: total memory, the unpooled fraction,
+/// and the fixed buffer size. The unpooled share is totalMemoryInBytes * unpooledFraction; the remainder sizes the
+/// pooled pool. By construction the two sum to the total, so neither can independently exceed it. totalMemoryInBytes
+/// == 0 means auto-detect (see detectAvailableMemoryBytes). The fraction is clamped into [0, 1] rather than asserted,
+/// so a misconfigured value degrades gracefully instead of crashing the worker.
+MemoryBudgets resolveMemoryBudgets(size_t totalMemoryInBytes, const uint32_t bufferSize, double unpooledFraction)
 {
-    INVARIANT(unpooledFraction > 0.0 and unpooledFraction < 1.0, "unpooled_memory_fraction={} must be in (0, 1)", unpooledFraction);
+    unpooledFraction = std::clamp(unpooledFraction, 0.0, 1.0);
     if (totalMemoryInBytes == 0)
     {
         totalMemoryInBytes = detectAvailableMemoryBytes();
