@@ -28,7 +28,10 @@ namespace NES
 namespace
 {
 constexpr size_t KiB = 1024;
-constexpr size_t STATE_BYTES = 64 * KiB;
+constexpr size_t StateBytes = 64 * KiB;
+constexpr size_t Alignment = 64;
+constexpr uint64_t PatternStride = 7;
+constexpr uint64_t PatternMask = 0xFF;
 
 /// A test-double SpillableState backed by a real ArenaMemoryResource. residentBytes() reports the mapped bytes while
 /// resident and 0 once evicted, modelling actual DRAM pressure. A deterministic pattern lets us assert that data
@@ -37,11 +40,12 @@ class FakeSpillableState final : public SpillableState
 {
 public:
     FakeSpillableState(uint64_t coldness, size_t bytes, const std::string& backingFile)
-        : coldness(coldness), arena(ArenaMemoryResource::Mode::Anon, backingFile)
+        : coldness(coldness)
+        , arena(ArenaMemoryResource::Mode::Anon, backingFile)
+        , region(static_cast<uint8_t*>(arena.allocate(bytes, Alignment)))
+        , sizeBytes(bytes)
+        , mappedBytes(arena.liveBytes())
     {
-        region = static_cast<uint8_t*>(arena.allocate(bytes, 64));
-        mappedBytes = arena.liveBytes();
-        sizeBytes = bytes;
         for (size_t i = 0; i < bytes; ++i)
         {
             region[i] = patternByte(i);
@@ -71,7 +75,7 @@ public:
     }
 
 private:
-    [[nodiscard]] uint8_t patternByte(size_t i) const { return static_cast<uint8_t>((i * 7 + coldness) & 0xFF); }
+    [[nodiscard]] uint8_t patternByte(size_t i) const { return static_cast<uint8_t>(((i * PatternStride) + coldness) & PatternMask); }
 
     uint64_t coldness;
     ArenaMemoryResource arena;
@@ -101,7 +105,7 @@ protected:
 
     std::shared_ptr<FakeSpillableState> makeState(uint64_t coldness)
     {
-        return std::make_shared<FakeSpillableState>(coldness, STATE_BYTES, (dir / ("s" + std::to_string(coldness) + ".spill")).string());
+        return std::make_shared<FakeSpillableState>(coldness, StateBytes, (dir / ("s" + std::to_string(coldness) + ".spill")).string());
     }
 };
 
@@ -109,19 +113,19 @@ protected:
 TEST_F(SpillManagerTest, AccountingAndRegistration)
 {
     SpillManager mgr(SpillConfiguration{});
-    EXPECT_EQ(mgr.registeredCount(), 0u);
-    EXPECT_EQ(mgr.residentBytes(), 0u);
+    EXPECT_EQ(mgr.registeredCount(), 0U);
+    EXPECT_EQ(mgr.residentBytes(), 0U);
 
     auto a = makeState(1);
     auto b = makeState(2);
     mgr.registerState(a);
     mgr.registerState(b);
-    EXPECT_EQ(mgr.registeredCount(), 2u);
-    EXPECT_GE(mgr.residentBytes(), 2 * STATE_BYTES);
+    EXPECT_EQ(mgr.registeredCount(), 2U);
+    EXPECT_GE(mgr.residentBytes(), 2 * StateBytes);
 
     mgr.unregisterState(a.get());
-    EXPECT_EQ(mgr.registeredCount(), 1u);
-    EXPECT_GE(mgr.residentBytes(), STATE_BYTES);
+    EXPECT_EQ(mgr.registeredCount(), 1U);
+    EXPECT_GE(mgr.residentBytes(), StateBytes);
     EXPECT_FALSE(b->isEvicted());
 }
 
@@ -131,7 +135,7 @@ TEST_F(SpillManagerTest, MaybeSpillEvictsColdestToLowWatermark)
 {
     SpillConfiguration cfg;
     cfg.enabled = true;
-    cfg.stateMemoryBudgetBytes = 5 * STATE_BYTES;
+    cfg.stateMemoryBudgetBytes = 5 * StateBytes;
     cfg.highWatermark = 0.9; /// 4.5 units -> over budget at 5 units triggers
     cfg.lowWatermark = 0.5; /// evict down to ~2.5 units
     SpillManager mgr(cfg);
@@ -144,7 +148,7 @@ TEST_F(SpillManagerTest, MaybeSpillEvictsColdestToLowWatermark)
     }
 
     const auto freed = mgr.maybeSpill();
-    EXPECT_GT(freed, 0u);
+    EXPECT_GT(freed, 0U);
     EXPECT_LE(mgr.residentBytes(), static_cast<size_t>(cfg.stateMemoryBudgetBytes * cfg.lowWatermark));
 
     /// Coldest (keys 1..3) evicted; warmest (4,5) resident with intact data.
@@ -167,7 +171,7 @@ TEST_F(SpillManagerTest, PinnedStateIsNotEvicted)
 {
     SpillConfiguration cfg;
     cfg.enabled = true;
-    cfg.stateMemoryBudgetBytes = 5 * STATE_BYTES;
+    cfg.stateMemoryBudgetBytes = 5 * StateBytes;
     cfg.highWatermark = 0.9;
     cfg.lowWatermark = 0.5;
     SpillManager mgr(cfg);
@@ -195,9 +199,9 @@ TEST_F(SpillManagerTest, EvictDownToTarget)
         states.push_back(makeState(k));
         mgr.registerState(states.back());
     }
-    const auto freed = mgr.evictDownTo(2 * STATE_BYTES);
-    EXPECT_GT(freed, 0u);
-    EXPECT_LE(mgr.residentBytes(), 2 * STATE_BYTES);
+    const auto freed = mgr.evictDownTo(2 * StateBytes);
+    EXPECT_GT(freed, 0U);
+    EXPECT_LE(mgr.residentBytes(), 2 * StateBytes);
     EXPECT_TRUE(states[0]->isEvicted());
 }
 
@@ -206,7 +210,7 @@ TEST_F(SpillManagerTest, DisabledDoesNotSpill)
 {
     SpillConfiguration cfg;
     cfg.enabled = false;
-    cfg.stateMemoryBudgetBytes = STATE_BYTES; /// deliberately tiny
+    cfg.stateMemoryBudgetBytes = StateBytes; /// deliberately tiny
     SpillManager mgr(cfg);
 
     auto a = makeState(1);
@@ -214,7 +218,7 @@ TEST_F(SpillManagerTest, DisabledDoesNotSpill)
     mgr.registerState(a);
     mgr.registerState(b);
 
-    EXPECT_EQ(mgr.maybeSpill(), 0u);
+    EXPECT_EQ(mgr.maybeSpill(), 0U);
     EXPECT_FALSE(a->isEvicted());
     EXPECT_FALSE(b->isEvicted());
 }
