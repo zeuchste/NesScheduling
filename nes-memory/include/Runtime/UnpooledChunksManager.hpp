@@ -52,9 +52,10 @@ class UnpooledChunksManager
     /// std::numeric_limits<size_t>::max() means "unbounded" (the historic behaviour, e.g. for tests).
     size_t unpooledMemoryBudgetInBytes;
 
-    /// Total bytes currently allocated across all unpooled chunks. Held via shared_ptr so the per-segment recycle
-    /// callback can decrement it even if this manager has been destroyed in the meantime.
-    std::shared_ptr<std::atomic<size_t>> currentlyAllocatedUnpooledBytes = std::make_shared<std::atomic<size_t>>(0);
+    /// Total bytes currently allocated across all unpooled chunks. The per-segment recycle callback decrements this
+    /// by reference: the owning TupleBuffer keeps its BufferRecycler (the BufferManager) alive, which in turn owns this
+    /// manager, so the manager always outlives any outstanding buffer whose recycle callback could run.
+    std::atomic<size_t> currentlyAllocatedUnpooledBytes{0};
 
     /// Helper struct that stores necessary information for accessing unpooled chunks
     /// Instead of allocating the exact needed space, we allocate a chunk of a space calculated by a rolling average of the last n sizes.
@@ -103,7 +104,7 @@ public:
     size_t getNumberOfUnpooledBuffers() const;
 
     /// Total bytes currently allocated for unpooled chunks, and the configured budget. Exposed for diagnostics/tests.
-    size_t getCurrentlyAllocatedUnpooledBytes() const { return currentlyAllocatedUnpooledBytes->load(std::memory_order_relaxed); }
+    size_t getCurrentlyAllocatedUnpooledBytes() const { return currentlyAllocatedUnpooledBytes.load(std::memory_order_relaxed); }
 
     size_t getUnpooledMemoryBudgetInBytes() const { return unpooledMemoryBudgetInBytes; }
 
