@@ -29,7 +29,7 @@
 namespace NES
 {
 
-SpillManager::SpillManager(SpillConfiguration configuration) : config(configuration)
+SpillManager::SpillManager(SpillConfiguration configuration) : config(std::move(configuration))
 {
     PRECONDITION(
         config.lowWatermark <= config.highWatermark,

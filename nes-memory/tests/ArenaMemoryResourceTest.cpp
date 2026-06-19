@@ -29,6 +29,12 @@
 namespace NES
 {
 
+namespace
+{
+/// Common alignment used across the tests (one cache line); allocations are page-rounded internally anyway.
+constexpr size_t TestAlignment = 64;
+}
+
 /// Tests for ArenaMemoryResource, the per-slice spill unit. The core guarantees are:
 /// (1) after an evict/reload cycle the data is intact at the *same* virtual address (so live pointers survive), and
 /// (2) live-byte accounting reflects allocations/deallocations. Both the Anon (vmcache-faithful) and FileBacked modes
@@ -66,14 +72,16 @@ TEST_P(ArenaMemoryResourceTest, DataAndAddressSurviveEvictReload)
 {
     ArenaMemoryResource arena(GetParam(), backingFile.string());
 
-    constexpr size_t numBytes = 64 * 1024;
-    auto* region = static_cast<uint8_t*>(arena.allocate(numBytes, 64));
+    constexpr size_t numBytes = size_t{64} * 1024;
+    constexpr uint8_t patternStride = 31;
+    constexpr uint8_t patternOffset = 7;
+    auto* region = static_cast<uint8_t*>(arena.allocate(numBytes, TestAlignment));
     ASSERT_NE(region, nullptr);
 
     /// Write a deterministic pattern.
     for (size_t i = 0; i < numBytes; ++i)
     {
-        region[i] = static_cast<uint8_t>((i * 31 + 7) & 0xFF);
+        region[i] = static_cast<uint8_t>((i * patternStride + patternOffset) & 0xFFU);
     }
 
     EXPECT_FALSE(arena.isEvicted());
@@ -85,12 +93,12 @@ TEST_P(ArenaMemoryResourceTest, DataAndAddressSurviveEvictReload)
     /// Same virtual address, identical contents.
     for (size_t i = 0; i < numBytes; ++i)
     {
-        ASSERT_EQ(region[i], static_cast<uint8_t>((i * 31 + 7) & 0xFF)) << "mismatch at byte " << i;
+        ASSERT_EQ(region[i], static_cast<uint8_t>((i * patternStride + patternOffset) & 0xFFU)) << "mismatch at byte " << i;
     }
-    EXPECT_GT(arena.bytesWritten(), 0u);
-    EXPECT_GT(arena.bytesRead(), 0u);
+    EXPECT_GT(arena.bytesWritten(), 0U);
+    EXPECT_GT(arena.bytesRead(), 0U);
 
-    arena.deallocate(region, numBytes, 64);
+    arena.deallocate(region, numBytes, TestAlignment);
 }
 
 /// Multiple allocations all survive a single evict/reload, each at its own stable address.
@@ -99,27 +107,27 @@ TEST_P(ArenaMemoryResourceTest, MultipleRegionsSurvive)
     ArenaMemoryResource arena(GetParam(), backingFile.string());
     std::vector<uint8_t*> regions;
     constexpr size_t numRegions = 5;
-    constexpr size_t regionBytes = 8 * 1024;
-    for (size_t r = 0; r < numRegions; ++r)
+    constexpr size_t regionBytes = size_t{8} * 1024;
+    for (size_t region = 0; region < numRegions; ++region)
     {
-        auto* p = static_cast<uint8_t*>(arena.allocate(regionBytes, 64));
-        std::memset(p, static_cast<int>(r + 1), regionBytes);
-        regions.push_back(p);
+        auto* ptr = static_cast<uint8_t*>(arena.allocate(regionBytes, TestAlignment));
+        std::memset(ptr, static_cast<int>(region + 1), regionBytes);
+        regions.push_back(ptr);
     }
 
     arena.evict();
     arena.reload();
 
-    for (size_t r = 0; r < numRegions; ++r)
+    for (size_t region = 0; region < numRegions; ++region)
     {
         for (size_t i = 0; i < regionBytes; ++i)
         {
-            ASSERT_EQ(regions[r][i], static_cast<uint8_t>(r + 1)) << "region " << r << " byte " << i;
+            ASSERT_EQ(regions[region][i], static_cast<uint8_t>(region + 1)) << "region " << region << " byte " << i;
         }
     }
-    for (auto* p : regions)
+    for (auto* ptr : regions)
     {
-        arena.deallocate(p, regionBytes, 64);
+        arena.deallocate(ptr, regionBytes, TestAlignment);
     }
 }
 
@@ -127,37 +135,42 @@ TEST_P(ArenaMemoryResourceTest, MultipleRegionsSurvive)
 TEST_P(ArenaMemoryResourceTest, LiveByteAccounting)
 {
     ArenaMemoryResource arena(GetParam(), backingFile.string());
-    EXPECT_EQ(arena.liveBytes(), 0u);
+    EXPECT_EQ(arena.liveBytes(), 0U);
 
-    auto* a = arena.allocate(1000, 64); /// rounds up to one page
-    const auto afterA = arena.liveBytes();
-    EXPECT_GE(afterA, 1000u);
+    constexpr size_t smallAllocBytes = 1000; /// rounds up to one page
+    constexpr size_t largeAllocBytes = 9000; /// spans more than one page
 
-    auto* b = arena.allocate(9000, 64);
-    EXPECT_GT(arena.liveBytes(), afterA);
+    auto* first = arena.allocate(smallAllocBytes, TestAlignment);
+    const auto afterFirst = arena.liveBytes();
+    EXPECT_GE(afterFirst, smallAllocBytes);
 
-    arena.deallocate(a, 1000, 64);
-    arena.deallocate(b, 9000, 64);
-    EXPECT_EQ(arena.liveBytes(), 0u);
+    auto* second = arena.allocate(largeAllocBytes, TestAlignment);
+    EXPECT_GT(arena.liveBytes(), afterFirst);
+
+    arena.deallocate(first, smallAllocBytes, TestAlignment);
+    arena.deallocate(second, largeAllocBytes, TestAlignment);
+    EXPECT_EQ(arena.liveBytes(), 0U);
 }
 
 /// evict()/reload() are idempotent: redundant calls are no-ops and do not corrupt state.
 TEST_P(ArenaMemoryResourceTest, EvictReloadIdempotent)
 {
     ArenaMemoryResource arena(GetParam(), backingFile.string());
-    auto* p = static_cast<uint8_t*>(arena.allocate(4096, 64));
-    std::iota(p, p + 256, uint8_t{0});
+    constexpr size_t allocBytes = 4096;
+    constexpr size_t patternLength = 256;
+    auto* ptr = static_cast<uint8_t*>(arena.allocate(allocBytes, TestAlignment));
+    std::iota(ptr, ptr + patternLength, uint8_t{0});
 
     arena.evict();
     arena.evict(); /// no-op
     arena.reload();
     arena.reload(); /// no-op
 
-    for (int i = 0; i < 256; ++i)
+    for (size_t i = 0; i < patternLength; ++i)
     {
-        ASSERT_EQ(p[i], static_cast<uint8_t>(i));
+        ASSERT_EQ(ptr[i], static_cast<uint8_t>(i));
     }
-    arena.deallocate(p, 4096, 64);
+    arena.deallocate(ptr, allocBytes, TestAlignment);
 }
 
 /// A BufferManager backed by the arena keeps its buffers' contents and addresses across an evict/reload, proving the
@@ -167,14 +180,16 @@ TEST_P(ArenaMemoryResourceTest, BufferManagerBackedByArenaSurvivesEvictReload)
     auto arena = std::make_shared<ArenaMemoryResource>(GetParam(), backingFile.string());
     constexpr uint32_t bufferSize = 4096;
     constexpr uint32_t numBuffers = 4;
-    auto bm = BufferManager::create(bufferSize, numBuffers, arena, 64);
+    constexpr uint8_t patternStride = 13;
+    constexpr uint8_t patternOffset = 5;
+    auto bm = BufferManager::create(bufferSize, numBuffers, arena, TestAlignment);
 
     auto buffer = bm->getBufferBlocking();
     auto* raw = buffer.getAvailableMemoryArea<uint8_t>().data();
     auto mem = buffer.getAvailableMemoryArea<uint8_t>();
     for (size_t i = 0; i < mem.size(); ++i)
     {
-        mem[i] = static_cast<uint8_t>((i * 13 + 5) & 0xFF);
+        mem[i] = static_cast<uint8_t>((i * patternStride + patternOffset) & 0xFFU);
     }
 
     arena->evict();
@@ -185,7 +200,7 @@ TEST_P(ArenaMemoryResourceTest, BufferManagerBackedByArenaSurvivesEvictReload)
     auto memAfter = buffer.getAvailableMemoryArea<uint8_t>();
     for (size_t i = 0; i < memAfter.size(); ++i)
     {
-        ASSERT_EQ(memAfter[i], static_cast<uint8_t>((i * 13 + 5) & 0xFF)) << "byte " << i;
+        ASSERT_EQ(memAfter[i], static_cast<uint8_t>((i * patternStride + patternOffset) & 0xFFU)) << "byte " << i;
     }
 
     /// Release before destroying the BufferManager (its destructor asserts no outstanding buffers).
