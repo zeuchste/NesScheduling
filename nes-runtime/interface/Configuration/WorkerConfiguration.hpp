@@ -44,13 +44,16 @@ public:
     WorkerNetworkConfiguration network = {"network", "Default configuration for network sources and sinks"};
 
     /// Total buffer memory budget for this worker, in bytes. The pooled pool and the unpooled budget are both derived
-    /// from this single ceiling (see unpooledMemoryFraction), so they cannot independently exceed it. 0 = auto-detect
-    /// (the cgroup memory limit if running in a container, else physical RAM). Set this to your buffer budget, i.e. the
-    /// container limit minus headroom for runtime/network/stacks, not the raw cgroup limit.
+    /// from this single ceiling (see unpooledMemoryFraction), so they cannot independently exceed it. Set this to your
+    /// buffer budget, i.e. the container limit minus headroom for runtime/network/stacks, not the raw cgroup limit.
+    /// Set to 0 to auto-detect (the cgroup memory limit if running in a container, else physical RAM); note that
+    /// auto-detect is unsafe when many workers share one host/container (e.g. the parallel test suite), as each would
+    /// size its pools against the full machine and collectively overcommit. The fixed default reproduces the legacy
+    /// 32768-buffer pooled pool: 32768 * DEFAULT_OPERATOR_BUFFER_SIZE / (1 - unpooledMemoryFraction) = 447392427.
     UIntOption totalMemoryInBytes
         = {"total_memory_in_bytes",
-           "0",
-           "Total worker buffer memory in bytes (0 = auto: cgroup limit if containerized, else physical RAM).",
+           "447392427",
+           "Total worker buffer memory in bytes (0 = auto-detect: cgroup limit if containerized, else physical RAM).",
            {std::make_shared<NumberValidation>()}};
 
     /// Share of totalMemoryInBytes reserved for unpooled (variable-sized) operator state (hash maps, paged vectors,
