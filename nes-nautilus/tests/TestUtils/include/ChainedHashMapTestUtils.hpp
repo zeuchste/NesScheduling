@@ -20,12 +20,16 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
 #include <DataTypes/DataType.hpp>
 #include <DataTypes/Schema.hpp>
+#include <DataTypes/SchemaFwd.hpp>
+#include <DataTypes/UnboundField.hpp>
 #include <Interface/BufferRef/TupleBufferRef.hpp>
 #include <Interface/HashMap/ChainedHashMap/ChainedEntryMemoryProvider.hpp>
 #include <Interface/HashMap/ChainedHashMap/ChainedHashMap.hpp>
 #include <Interface/HashMap/HashMap.hpp>
+#include <Interface/PagedVector/PagedVectorRef.hpp>
 #include <Interface/Record.hpp>
 #include <Runtime/AbstractBufferProvider.hpp>
 #include <Runtime/BufferManager.hpp>
@@ -56,7 +60,7 @@ struct TestParams
     TestParams() = default;
     TestParams(const MinMaxValue& minMaxNumberOfItems, const MinMaxValue& minMaxNumberOfBuckets, const MinMaxValue& minMaxPageSize);
     uint64_t numberOfItems{}, numberOfBuckets{}, pageSize{};
-    std::vector<Schema> keyDataTypes, valueDataTypes;
+    std::vector<Schema<QualifiedUnboundField, Ordered>> keyDataTypes, valueDataTypes;
 };
 
 class ChainedHashMapTestUtils : public TestUtils::NautilusTestUtils
@@ -64,11 +68,12 @@ class ChainedHashMapTestUtils : public TestUtils::NautilusTestUtils
 public:
     std::shared_ptr<BufferManager> bufferManager;
     std::unique_ptr<nautilus::engine::NautilusEngine> nautilusEngine;
-    Schema inputSchema;
+    Schema<QualifiedUnboundField, Ordered> inputSchema;
     std::vector<FieldOffsets> fieldKeys, fieldValues;
     std::vector<Record::RecordFieldIdentifier> projectionKeys, projectionValues;
     std::vector<TupleBuffer> inputBuffers;
     std::shared_ptr<TupleBufferRef> inputBufferRef;
+    std::shared_ptr<PagedVectorTupleLayout> tupleLayout;
     uint64_t keySize, valueSize, entriesPerPage, entrySize;
     TestParams params;
 
@@ -94,25 +99,25 @@ public:
     /// Compiles the query that writes the values for all keys in keyBufferRef to outputBufferForKeys.
     /// This enables us to perform a comparison in the c++ code by comparing every value in the record buffer with the exact value.
     /// We are using findOrCreateEntry() of the hash map interface.
-    [[nodiscard]] nautilus::engine::CallableFunction<void, TupleBuffer*, TupleBuffer*, AbstractBufferProvider*, HashMap*>
+    [[nodiscard]] nautilus::engine::CompiledFunction<void(TupleBuffer*, TupleBuffer*, AbstractBufferProvider*, HashMap*)>
     compileFindAndWriteToOutputBuffer(const std::shared_ptr<TupleBufferRef>& tupleBufferRef) const;
 
     /// Compiles a function that writes all keys and values to bufferOutput.
     /// To iterate over all key and values, we use the entry iterator. We assume that the bufferOutput is large enough to hold all values.
     /// We are using our EntryIterator of the chained hash map.
-    [[nodiscard]] nautilus::engine::CallableFunction<void, TupleBuffer*, HashMap*, AbstractBufferProvider*>
+    [[nodiscard]] nautilus::engine::CompiledFunction<void(TupleBuffer*, HashMap*, AbstractBufferProvider*)>
     compileFindAndWriteToOutputBufferWithEntryIterator(const std::shared_ptr<TupleBufferRef>& tupleBufferRef) const;
 
 
     /// Compiles a function that finds the entry and updates the value.
     /// This enables us to perform a comparison in the c++ code by comparing every value in the record buffer with the exact value.
     /// We are using the findOrCreateEntry() of the hash map interface.
-    [[nodiscard]] nautilus::engine::CallableFunction<void, TupleBuffer*, AbstractBufferProvider*, HashMap*> compileFindAndInsert() const;
+    [[nodiscard]] nautilus::engine::CompiledFunction<void(TupleBuffer*, AbstractBufferProvider*, HashMap*)> compileFindAndInsert() const;
 
     /// Compiles a function that finds the entry and updates the value.
     /// This enables us to perform a comparison in the c++ code by comparing every value in the record buffer with the exact value.
     /// We are using the findOrCreateEntry() followed by a insertOrUpdateEntry() of the hash map interface.
-    [[nodiscard]] nautilus::engine::CallableFunction<void, TupleBuffer*, TupleBuffer*, AbstractBufferProvider*, HashMap*>
+    [[nodiscard]] nautilus::engine::CompiledFunction<void(TupleBuffer*, TupleBuffer*, AbstractBufferProvider*, HashMap*)>
     compileFindAndUpdate() const;
 
     /// Creates an exact map of the inputBuffers.

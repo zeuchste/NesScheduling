@@ -24,7 +24,9 @@
 #include <DataTypes/DataType.hpp>
 #include <DataTypes/DataTypeProvider.hpp>
 #include <DataTypes/Schema.hpp>
+#include <DataTypes/SchemaFwd.hpp>
 #include <Functions/LogicalFunction.hpp>
+#include <Schema/Field.hpp>
 #include <Serialization/LogicalFunctionReflection.hpp>
 #include <Util/PlanRenderer.hpp>
 #include <Util/Reflection.hpp>
@@ -57,7 +59,7 @@ CastToUnixTimestampLogicalFunction CastToUnixTimestampLogicalFunction::withDataT
     return copy;
 }
 
-LogicalFunction CastToUnixTimestampLogicalFunction::withInferredDataType(const Schema& schema) const
+LogicalFunction CastToUnixTimestampLogicalFunction::withInferredDataType(const Schema<Field, Unordered>& schema) const
 {
     const auto newChildren = getChildren() | std::views::transform([&schema](auto& child) { return child.withInferredDataType(schema); })
         | std::ranges::to<std::vector>();
@@ -106,6 +108,7 @@ CastToUnixTimestampLogicalFunction
 Unreflector<CastToUnixTimestampLogicalFunction>::operator()(const Reflected& reflected, const ReflectionContext& context) const
 {
     auto [function] = context.unreflect<detail::ReflectedCastToUnixTimestampLogicalFunction>(reflected);
+
     return CastToUnixTimestampLogicalFunction{std::move(function)};
 }
 
@@ -116,7 +119,7 @@ LogicalFunctionGeneratedRegistrar::RegisterCastToUnixTsLogicalFunction(LogicalFu
     {
         throw CannotDeserialize("CastToUnixTimestampLogicalFunction requires exactly one child, but got {}", arguments.children.size());
     }
-    return CastToUnixTimestampLogicalFunction(arguments.children[0]);
+    return CastToUnixTimestampLogicalFunction{arguments.children[0]};
 }
 
 }

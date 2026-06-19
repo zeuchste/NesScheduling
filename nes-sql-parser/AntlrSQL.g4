@@ -81,7 +81,7 @@ modelInputField: identifier typeDefinition;
 modelOutputField: identifier typeDefinition;
 
 schemaDefinition: '(' columnDefinition (',' columnDefinition)* ')';
-columnDefinition: identifierChain typeDefinition nullableDefinition?;
+columnDefinition: strictIdentifier typeDefinition nullableDefinition?;
 
 typeDefinition: DATA_TYPE;
 nullableDefinition: NOT NULLTOKEN;
@@ -154,12 +154,12 @@ joinCriteria
     ;
 
 relationPrimary
-    : multipartIdentifier tableAlias          #tableName
-    | '(' query ')'  tableAlias               #aliasedQuery
-    | '(' relation ')' tableAlias             #aliasedRelation
+    : multipartIdentifier                     #tableName
+    | '(' query ')'                           #aliasedQuery
+    | '(' relation ')'                        #aliasedRelation
     | inlineTable                             #inlineTableDefault2
     | inlineSource                            #inlineDefinedSource
-    | modelInferenceSource tableAlias         #modelInferenceRelation
+    | modelInferenceSource                    #modelInferenceRelation
     ;
 
 modelInferenceSource
@@ -190,11 +190,7 @@ whereClause: WHERE booleanExpression;
 havingClause: HAVING booleanExpression;
 
 inlineTable
-    : VALUES expression (',' expression)* tableAlias
-    ;
-
-tableAlias
-    : (AS? identifier identifierList?)?
+    : VALUES expression (',' expression)*
     ;
 
 multipartIdentifier
@@ -219,7 +215,7 @@ quotedIdentifier
     ;
 
 BACKQUOTED_IDENTIFIER
-    : '`' ( ~'`' | '``' )* '`'
+    : '"' ( ~'"' )* '"'
     ;
 
 identifierChain: strictIdentifier ('.' strictIdentifier)*;
@@ -294,9 +290,11 @@ windowSpec:
     ;
 
 timeWindow
-    : TUMBLING '(' (timestampParameter ',')?  sizeParameter ')'                       #tumblingWindow
-    | SLIDING '(' (timestampParameter ',')? sizeParameter ',' advancebyParameter ')' #slidingWindow
+    : TUMBLING '(' timestampParameter ',' sizeParameter ')'                       #tumblingWindow
+    | SLIDING '(' timestampParameter ',' sizeParameter ',' advancebyParameter ')' #slidingWindow
     ;
+
+timestampParameter: name=IDENTIFIER (',' name=IDENTIFIER)?;
 
 countWindow:
     TUMBLING '(' INTEGER_VALUE ')'    #countBasedTumbling
@@ -320,7 +318,6 @@ timeUnit: MS
         | DAY
         ;
 
-timestampParameter: name=identifier;
 
 functionName:  IDENTIFIER | AVG | MAX | MIN | SUM | COUNT | MEDIAN;
 
@@ -358,7 +355,8 @@ predicate
 
 
 valueExpression
-    : (functionName | typeDefinition) '(' (argument+=expression (',' argument+=expression)*)? ')'                 #functionCall
+    : CAST '(' expression AS targetType=typeDefinition ')'                                    #castExpression
+    | (functionName | typeDefinition) '(' (starArg=ASTERISK | argument+=expression (',' argument+=expression)*)? ')'  #functionCall
     | op=(MINUS | PLUS | TILDE) valueExpression                                        #arithmeticUnary
     | left=valueExpression op=(ASTERISK | SLASH | PERCENT | DIV) right=valueExpression #arithmeticBinary
     | left=valueExpression op=(PLUS | MINUS | CONCAT_PIPE) right=valueExpression       #arithmeticBinary
@@ -429,6 +427,7 @@ ASC: 'ASC' | 'asc';
 AT: 'AT';
 BETWEEN: 'BETWEEN' | 'between';
 BY: 'BY' | 'by';
+CAST: 'CASTTOTYPE' | 'casttotype';
 COMMENT: 'COMMENT';
 CUBE: 'CUBE';
 DELETE: 'DELETE';
@@ -553,7 +552,6 @@ HAT: '^';
 
 STRING
     : '\'' ( ~('\''|'\\') | ('\\' .) )* '\''
-    | '"' ( ~('"'|'\\') | ('\\' .) )* '"'
     ;
 
 INTEGER_VALUE

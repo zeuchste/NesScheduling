@@ -14,6 +14,7 @@
 #include <ChainedHashMapTestUtils.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -23,12 +24,12 @@
 #include <memory>
 #include <numeric>
 #include <random>
+#include <ranges>
 #include <sstream>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
 #include <DataTypes/DataType.hpp>
-#include <DataTypes/Schema.hpp>
 #include <Interface/BufferRef/LowerSchemaProvider.hpp>
 #include <Interface/BufferRef/TupleBufferRef.hpp>
 #include <Interface/HashMap/ChainedHashMap/ChainedEntryMemoryProvider.hpp>
@@ -45,6 +46,7 @@
 #include <gtest/gtest.h>
 #include <magic_enum/magic_enum.hpp>
 
+#include <Interface/PagedVector/PagedVectorRef.hpp>
 #include <Engine.hpp>
 #include <ErrorHandling.hpp>
 #include <NautilusTestUtils.hpp>
@@ -78,20 +80,24 @@ void ChainedHashMapTestUtils::setUpChainedHashMapTest(
     const bool compilation = (backend == ExecutionMode::COMPILER);
     NES_INFO("Backend: {} and compilation: {}", magic_enum::enum_name(backend), compilation);
     options.setOption("engine.Compilation", compilation);
+    options.setOption("engine.backend", std::string("mlir"));
+    options.setOption("engine.compilationStrategy", std::string("legacy"));
     options.setOption("mlir.enableMultithreading", mlirEnableMultithreading);
     nautilusEngine = std::make_unique<nautilus::engine::NautilusEngine>(options);
 
     /// Creating a combined schema with the keys and value types.
     auto inputSchemaKey = TestUtils::NautilusTestUtils::createSchemaFromBasicTypes(keyTypes);
-    const auto inputSchemaValue = TestUtils::NautilusTestUtils::createSchemaFromBasicTypes(valueTypes, inputSchemaKey.getNumberOfFields());
-    const auto fieldNamesKey = inputSchemaKey.getFieldNames();
-    const auto fieldNamesValue = inputSchemaValue.getFieldNames();
-    inputSchema = inputSchemaKey;
-    inputSchema.appendFieldsFromOtherSchema(inputSchemaValue);
+    const auto inputSchemaValue = TestUtils::NautilusTestUtils::createSchemaFromBasicTypes(valueTypes, std::ranges::size(inputSchemaKey));
+    const auto fieldNamesKey = inputSchemaKey | std::views::transform([](const auto& field) { return field.getFullyQualifiedName(); })
+        | std::ranges::to<std::vector>();
+    const auto fieldNamesValue = inputSchemaValue | std::views::transform([](const auto& field) { return field.getFullyQualifiedName(); })
+        | std::ranges::to<std::vector>();
+    inputSchema = Schema<QualifiedUnboundField, Ordered>{
+        std::array{inputSchemaKey, inputSchemaValue} | std::views::join | std::ranges::to<std::vector>()};
 
     /// Setting the hash map configurations
-    keySize = inputSchemaKey.getSizeOfSchemaInBytes();
-    valueSize = inputSchemaValue.getSizeOfSchemaInBytes();
+    keySize = inputSchemaKey.getSizeInBytes();
+    valueSize = inputSchemaValue.getSizeInBytes();
     entrySize = sizeof(ChainedHashMapEntry) + keySize + valueSize;
     entriesPerPage = params.pageSize / entrySize;
 
@@ -102,19 +108,21 @@ void ChainedHashMapTestUtils::setUpChainedHashMapTest(
     constexpr auto bufferSize = 4096;
     constexpr auto minimumBuffers = 4000UL;
     constexpr auto callsToCreateMonotonicValues = 3;
-    const auto bufferNeeded
-        = callsToCreateMonotonicValues * ((inputSchema.getSizeOfSchemaInBytes() * params.numberOfItems) / bufferSize + 1);
+    const auto bufferNeeded = callsToCreateMonotonicValues * ((inputSchema.getSizeInBytes() * params.numberOfItems) / bufferSize + 1);
     bufferManager = BufferManager::create(bufferSize, std::max(bufferNeeded, minimumBuffers));
 
     /// Creating a tuple buffer memory provider for the key and value buffers
     inputBufferRef = LowerSchemaProvider::lowerSchema(bufferManager->getBufferSize(), inputSchema, MemoryLayoutType::ROW_LAYOUT);
+    tupleLayout = std::make_shared<DefaultPagedVectorTupleLayout>(inputSchema);
 
     /// Creating the fields for the key and value from the schema
     std::tie(fieldKeys, fieldValues) = ChainedEntryMemoryProvider::createFieldOffsets(inputSchema, fieldNamesKey, fieldNamesValue);
 
     /// Storing the field names for the key and value
-    projectionKeys = inputSchemaKey.getFieldNames();
-    projectionValues = inputSchemaValue.getFieldNames();
+    projectionKeys = inputSchemaKey | std::views::transform([](const auto& field) { return field.getFullyQualifiedName(); })
+        | std::ranges::to<std::vector>();
+    projectionValues = inputSchemaValue | std::views::transform([](const auto& field) { return field.getFullyQualifiedName(); })
+        | std::ranges::to<std::vector>();
 
     /// Creating the buffers with the values for the keys and values with a specific seed
     inputBuffers = createMonotonicallyIncreasingValues(inputSchema, MemoryLayoutType::ROW_LAYOUT, params.numberOfItems, *bufferManager);
@@ -178,7 +186,7 @@ std::string ChainedHashMapTestUtils::compareExpectedWithActual(
     return ss.str();
 }
 
-nautilus::engine::CallableFunction<void, TupleBuffer*, TupleBuffer*, AbstractBufferProvider*, HashMap*>
+nautilus::engine::CompiledFunction<void(TupleBuffer*, TupleBuffer*, AbstractBufferProvider*, HashMap*)>
 ChainedHashMapTestUtils::compileFindAndWriteToOutputBuffer(const std::shared_ptr<TupleBufferRef>& tupleBufferRef) const
 {
     /// We are not allowed to use const or const references for the lambda function params, as nautilus does not support this in the registerFunction method.
@@ -217,7 +225,7 @@ ChainedHashMapTestUtils::compileFindAndWriteToOutputBuffer(const std::shared_ptr
     /// NOLINTEND(performance-unnecessary-value-param)
 }
 
-nautilus::engine::CallableFunction<void, TupleBuffer*, HashMap*, AbstractBufferProvider*>
+nautilus::engine::CompiledFunction<void(TupleBuffer*, HashMap*, AbstractBufferProvider*)>
 ChainedHashMapTestUtils::compileFindAndWriteToOutputBufferWithEntryIterator(const std::shared_ptr<TupleBufferRef>& tupleBufferRef) const
 {
     /// We are not allowed to use const or const references for the lambda function params, as nautilus does not support this in the registerFunction method.
@@ -249,7 +257,7 @@ ChainedHashMapTestUtils::compileFindAndWriteToOutputBufferWithEntryIterator(cons
     /// NOLINTEND(performance-unnecessary-value-param)
 }
 
-nautilus::engine::CallableFunction<void, TupleBuffer*, AbstractBufferProvider*, HashMap*>
+nautilus::engine::CompiledFunction<void(TupleBuffer*, AbstractBufferProvider*, HashMap*)>
 ChainedHashMapTestUtils::compileFindAndInsert() const
 {
     /// We are not allowed to use const or const references for the lambda function params, as nautilus does not support this in the registerFunction method.
@@ -282,7 +290,7 @@ ChainedHashMapTestUtils::compileFindAndInsert() const
     /// NOLINTEND(performance-unnecessary-value-param)
 }
 
-nautilus::engine::CallableFunction<void, TupleBuffer*, TupleBuffer*, AbstractBufferProvider*, HashMap*>
+nautilus::engine::CompiledFunction<void(TupleBuffer*, TupleBuffer*, AbstractBufferProvider*, HashMap*)>
 ChainedHashMapTestUtils::compileFindAndUpdate() const
 {
     /// Compiling a function that finds the entry and updates the value.
@@ -363,10 +371,10 @@ void ChainedHashMapTestUtils::checkIfValuesAreCorrectViaFindEntry(
     /// Calling now the compiled function to write all values of the map to the output buffer.
     const auto numberOfInputTuples = std::accumulate(
         inputBuffers.begin(), inputBuffers.end(), 0, [](const auto& sum, const auto& buffer) { return sum + buffer.getNumberOfTuples(); });
-    auto bufferOutputOpt = bufferManager->getUnpooledBuffer(numberOfInputTuples * inputSchema.getSizeOfSchemaInBytes());
+    auto bufferOutputOpt = bufferManager->getUnpooledBuffer(numberOfInputTuples * inputSchema.getSizeInBytes());
     if (not bufferOutputOpt)
     {
-        NES_ERROR("Could not allocate buffer for size {}", numberOfInputTuples * inputSchema.getSizeOfSchemaInBytes());
+        NES_ERROR("Could not allocate buffer for size {}", numberOfInputTuples * inputSchema.getSizeInBytes());
         ASSERT_TRUE(false);
     }
     auto bufferOutput = bufferOutputOpt.value();

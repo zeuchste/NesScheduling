@@ -18,7 +18,9 @@
 #include <vector>
 #include <DataTypes/DataType.hpp>
 #include <DataTypes/Schema.hpp>
+#include <DataTypes/SchemaFwd.hpp>
 #include <Functions/LogicalFunction.hpp>
+#include <Schema/Field.hpp>
 #include <Util/Logger/Formatter.hpp>
 #include <Util/PlanRenderer.hpp>
 #include <Util/Reflection.hpp>
@@ -30,7 +32,7 @@ namespace NES
 class CastToTypeLogicalFunction final
 {
 public:
-    static constexpr std::string_view NAME = "Cast";
+    static constexpr std::string_view NAME = "CastToType";
 
     CastToTypeLogicalFunction(DataType dataType, LogicalFunction child);
 
@@ -38,7 +40,7 @@ public:
 
     [[nodiscard]] DataType getDataType() const;
     [[nodiscard]] CastToTypeLogicalFunction withDataType(const DataType& dataType) const;
-    [[nodiscard]] LogicalFunction withInferredDataType(const Schema& schema) const;
+    [[nodiscard]] LogicalFunction withInferredDataType(const Schema<Field, Unordered>& schema) const;
 
     [[nodiscard]] std::vector<LogicalFunction> getChildren() const;
     [[nodiscard]] CastToTypeLogicalFunction withChildren(const std::vector<LogicalFunction>& children) const;
@@ -50,6 +52,17 @@ private:
     DataType castToType;
     LogicalFunction child;
 };
+
+namespace detail
+{
+
+struct ReflectedCastToTypeLogicalFunction
+{
+    LogicalFunction child;
+    DataType castToType;
+};
+
+}
 
 template <>
 struct Reflector<CastToTypeLogicalFunction>

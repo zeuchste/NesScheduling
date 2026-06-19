@@ -128,21 +128,21 @@ CREATE LOGICAL SOURCE lrb(
 );
 
 CREATE PHYSICAL SOURCE FOR lrb TYPE TCP SET(
-  'localhost:9090' AS `SOURCE`.`HOST`, 
-  'localhost' as `SOURCE`.SOCKET_HOST,
-  50501 as `SOURCE`.SOCKET_PORT,
-  65536 as `SOURCE`.SOCKET_BUFFER_SIZE,
-  100 as `SOURCE`.FLUSH_INTERVAL_MS,
-  60 as `SOURCE`.CONNECT_TIMEOUT_SECONDS,
-  'CSV' as INPUT_FORMATTER.`TYPE`,
+  'localhost:9090' AS "SOURCE"."HOST", 
+  'localhost' as "SOURCE".SOCKET_HOST,
+  50501 as "SOURCE".SOCKET_PORT,
+  65536 as "SOURCE".SOCKET_BUFFER_SIZE,
+  100 as "SOURCE".FLUSH_INTERVAL_MS,
+  60 as "SOURCE".CONNECT_TIMEOUT_SECONDS,
+  'CSV' as INPUT_FORMATTER."TYPE",
   '\n' as INPUT_FORMATTER.TUPLE_DELIMITER,
   ',' as INPUT_FORMATTER.FIELD_DELIMITER
 );
 
 CREATE PHYSICAL SOURCE FOR lrb TYPE File SET(
-  'localhost:9090' AS `SOURCE`.`HOST`,
-  'lrb.json' as `SOURCE`.FILE_PATH,
-  'JSON' as INPUT_FORMATTER.`TYPE`
+  'localhost:9090' AS "SOURCE"."HOST",
+  'lrb.json' as "SOURCE".FILE_PATH,
+  'JSON' as INPUT_FORMATTER."TYPE"
 );
 
 CREATE SINK csv_sink(
@@ -153,11 +153,11 @@ CREATE SINK csv_sink(
   positionDiv5280 INT32,
   lrb.avgSpeed FLOAT64
 ) TYPE File SET(
-  'localhost:9090' AS `SINK`.`HOST`, 
-  '<path>' as `SINK`.FILE_PATH,
-  'CSV' as `SINK`.OUTPUT_FORMAT,
-  FALSE as `SINK`.APPEND,
-  FALSE as `OUTPUT_FORMATTER`.QUOTE_STRINGS
+  'localhost:9090' AS "SINK"."HOST", 
+  '<path>' as "SINK".FILE_PATH,
+  'CSV' as "SINK".OUTPUT_FORMAT,
+  FALSE as "SINK".APPEND,
+  FALSE as "OUTPUT_FORMATTER".QUOTE_STRINGS
 );
 
 SELECT start, end, highway, direction, positionDiv5280, AVG(speed) AS avgSpeed
@@ -215,21 +215,21 @@ Supported physical source types:
 In our example, we define two physical sources that both feed the `lrb` logical source:
 ```sql
 CREATE PHYSICAL SOURCE FOR lrb TYPE TCP SET(
-  'localhost:9090' AS `SOURCE`.`HOST`, 
-  'localhost' as `SOURCE`.SOCKET_HOST,
-  50501 as `SOURCE`.SOCKET_PORT,
-  65536 as `SOURCE`.SOCKET_BUFFER_SIZE,
-  100 as `SOURCE`.FLUSH_INTERVAL_MS,
-  60 as `SOURCE`.CONNECT_TIMEOUT_SECONDS,
-  'CSV' as INPUT_FORMATTER.`TYPE`,
+  'localhost:9090' AS "SOURCE"."HOST", 
+  'localhost' as "SOURCE".SOCKET_HOST,
+  50501 as "SOURCE".SOCKET_PORT,
+  65536 as "SOURCE".SOCKET_BUFFER_SIZE,
+  100 as "SOURCE".FLUSH_INTERVAL_MS,
+  60 as "SOURCE".CONNECT_TIMEOUT_SECONDS,
+  'CSV' as INPUT_FORMATTER."TYPE",
   '\n' as INPUT_FORMATTER.TUPLE_DELIMITER,
   ',' as INPUT_FORMATTER.FIELD_DELIMITER
 );
 
 CREATE PHYSICAL SOURCE FOR lrb TYPE File SET(
-  'localhost:9090' AS `SOURCE`.`HOST`,
-  'lrb.json' as `SOURCE`.FILE_PATH,
-  'JSON' as INPUT_FORMATTER.`TYPE`
+  'localhost:9090' AS "SOURCE"."HOST",
+  'lrb.json' as "SOURCE".FILE_PATH,
+  'JSON' as INPUT_FORMATTER."TYPE"
 );
 ```
 As you can see, one source reads CSV-formatted data from a TCP socket, while the other reads JSON-formatted data from a file.
@@ -267,10 +267,10 @@ CREATE SINK csv_sink(
   positionDiv5280 INT32,
   lrb.avgSpeed FLOAT64
 ) TYPE File SET(
-  'localhost:9090' AS `SINK`.`HOST`, 
-  '<path>' as `SINK`.FILE_PATH,
-  'CSV' as `SINK`.OUTPUT_FORMAT,
-  FALSE as `SINK`.APPEND
+  'localhost:9090' AS "SINK"."HOST", 
+  '<path>' as "SINK".FILE_PATH,
+  'CSV' as "SINK".OUTPUT_FORMAT,
+  FALSE as "SINK".APPEND
 );
 ```
 The sink name (`csv_sink`) must match the name used in the query's `INTO` clause.
@@ -297,7 +297,7 @@ Input formatters convert byte streams from source connectors into the native in-
 The format is specified via `INPUT_FORMATTER.*` parameters in each physical source:
 ```sql
 CREATE PHYSICAL SOURCE FOR source_name TYPE TCP SET(
-  'CSV' as INPUT_FORMATTER.`TYPE`,
+  'CSV' as INPUT_FORMATTER."TYPE",
   '\n' as INPUT_FORMATTER.TUPLE_DELIMITER,
   ',' as INPUT_FORMATTER.FIELD_DELIMITER,
   ...
@@ -320,8 +320,8 @@ represents strings.
 All required parameters can be specified via `OUTPUT_FORMATTER.*` in each sink.
 ```sql
 CREATE SINK sink_name TYPE FILE SET(
-       'CSV' as `SINK`.OUTPUT_FORMAT,
-       TRUE as `OUTPUT_FORMATTER`.QUOTE_STRINGS,
+       'CSV' as "SINK".OUTPUT_FORMAT,
+       TRUE as "OUTPUT_FORMATTER".QUOTE_STRINGS,
        ...
 );
 ```
@@ -599,13 +599,12 @@ Functions are either unary (one input) or binary (two inputs).
 
 #### **Base**
 
-| Function                      | Example                                      |
-|-------------------------------|----------------------------------------------|
-| Access a field                | `SELECT x FROM s INTO sink`                  |
-| Define a constant             | `SELECT INT32(42) FROM s INTO sink`          |
-| Rename an input function      | `SELECT x AS x1 FROM s INTO sink`            |
-| Cast an input function        | `SELECT x FROM s INTO sink`                  |
-| Cast string to unix timestamp | `SELECT CASTTOUNIXTS(ts) FROM s INTO sink`   |
+| Function                 | Example                                      |
+|-------------------------------|-------------------------------------------------------|
+| Access a field           | `SELECT x FROM s INTO sink`                  |
+| Define a constant        | `SELECT INT32(42) FROM s INTO sink`          |
+| Rename an input function | `SELECT x AS x1 FROM s INTO sink`            |
+| Cast an input function   | `SELECT CAST(x AS FLOAT64) FROM s INTO sink` || Cast string to unix timestamp | `SELECT CASTTOUNIXTS(ts) FROM s INTO sink`   |
 | Cast unix timestamp to string | `SELECT CASTFROMUNIXTS(ts) FROM s INTO sink` |
 
 #### **Arithmetical**
@@ -640,15 +639,29 @@ Functions are either unary (one input) or binary (two inputs).
 
 #### **Other**
 
-| Description                     | Example                                            |
-|---------------------------------|----------------------------------------------------|
-| Concatenate variable-sized data | `SELECT CONCAT(text1, text2) FROM s INTO sink`     |
-| Encode to base64                | `SELECT TO_BASE64(data) FROM s INTO sink`          |
-| Decode from base64              | `SELECT FROM_BASE64(encoded) FROM s INTO sink`     |
+| Description                     | Example                                              |
+|---------------------------------|------------------------------------------------------|
+| Concatenate variable-sized data | `SELECT CONCAT(text1, text2) FROM s INTO sink`       |
+| Encode to base64                | `SELECT TO_BASE64(data) FROM s INTO sink`            |
+| Decode from base64              | `SELECT FROM_BASE64(encoded) FROM s INTO sink`       |
+| Cast to a different type        | `SELECT CAST(x AS FLOAT64) FROM s INTO sink`         |
 
 `TO_BASE64` and `FROM_BASE64` convert between raw binary data (`VARSIZED`) and base64-encoded text (`VARSIZED`).
 They use OpenSSL's EVP base64 implementation. These functions are particularly useful with `MODEL_INFERENCE` to
 pass binary tensor data through SQL queries (see [MODEL_INFERENCE](#model_inference)).
+
+`CAST` converts a field from one type to another using standard SQL syntax: `CAST(field AS TargetType)`.
+For numeric-to-numeric conversions (e.g., `INT32` to `FLOAT64`), a direct type cast is performed.
+When casting from `VARSIZED` (string) to a numeric type, all characters except digits (`0-9`), `.`, `+`, `-`, `e`, and `E` (scientific notation) are stripped before parsing.
+For example, `"1 234.56"` becomes `1234.56` and `"12?3"` becomes `123`.
+
+```sql
+SELECT CAST(price AS FLOAT64) FROM s INTO sink
+```
+
+```sql
+SELECT CAST(text_value AS INT32) AS parsed_value FROM s INTO sink
+```
 
 We can combine functions into nested structures:
 ```sql

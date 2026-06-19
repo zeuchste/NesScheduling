@@ -18,6 +18,7 @@ add_library(nes-memory
         TaggedPointer.cpp
         UnpooledChunksManager.cpp
         VariableSizedAccess.cpp
+        MemoryUtils.cpp
         ArenaMemoryResource.cpp
         SpillManager.cpp
         ${MEMORY_LAYOUT_SOURCES}

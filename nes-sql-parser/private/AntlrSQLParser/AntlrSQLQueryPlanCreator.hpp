@@ -21,6 +21,7 @@
 #include <AntlrSQLBaseListener.h>
 #include <AntlrSQLParser.h>
 #include <AntlrSQLParser/AntlrSQLHelper.hpp>
+#include <Identifiers/Identifier.hpp>
 #include <Plans/LogicalPlan.hpp>
 #include <CommonParserFunctions.hpp>
 
@@ -30,7 +31,7 @@ namespace NES::Parsers
 class AntlrSQLQueryPlanCreator final : public AntlrSQLBaseListener
 {
     std::stack<AntlrSQLHelper> helpers;
-    std::vector<std::variant<std::string, std::pair<std::string, ConfigMap>>> sinks;
+    std::vector<std::variant<Identifier, std::pair<Identifier, ConfigMap>>> sinks;
     std::stack<LogicalPlan> queryPlans;
 
 public:
@@ -49,6 +50,7 @@ public:
     void exitComparison(AntlrSQLParser::ComparisonContext* context) override;
     void enterFunctionCall(AntlrSQLParser::FunctionCallContext* context) override;
     void exitFunctionCall(AntlrSQLParser::FunctionCallContext* context) override;
+    void exitCastExpression(AntlrSQLParser::CastExpressionContext* context) override;
     void enterHavingClause(AntlrSQLParser::HavingClauseContext* context) override;
     void exitHavingClause(AntlrSQLParser::HavingClauseContext* context) override;
     void enterJoinRelation(AntlrSQLParser::JoinRelationContext* context) override;

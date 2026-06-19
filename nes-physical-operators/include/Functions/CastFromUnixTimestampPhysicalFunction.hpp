@@ -37,4 +37,5 @@ private:
 };
 
 static_assert(PhysicalFunctionConcept<CastFromUnixTimestampPhysicalFunction>);
+
 }

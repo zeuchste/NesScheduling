@@ -104,6 +104,15 @@ void WindowBasedOperatorHandler::pinSliceForBuild(const WorkerThreadId workerThr
     spillManager->maybeSpill();
 }
 
+Slice* WindowBasedOperatorHandler::getPinnedBuildSlice(const WorkerThreadId workerThreadId) const
+{
+    if (pinnedBuildSlicePerWorker.empty())
+    {
+        return nullptr;
+    }
+    return pinnedBuildSlicePerWorker[workerThreadId % pinnedBuildSlicePerWorker.size()].get();
+}
+
 WindowSlicesStoreInterface& WindowBasedOperatorHandler::getSliceAndWindowStore() const
 {
     return *sliceAndWindowStore;

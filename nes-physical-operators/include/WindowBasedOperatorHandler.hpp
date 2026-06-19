@@ -94,6 +94,11 @@ public:
     /// spill when the worker moves to a new slice. No-op when spilling is disabled.
     void pinSliceForBuild(WorkerThreadId workerThreadId, const std::shared_ptr<Slice>& slice);
 
+    /// Returns the slice this worker is currently building into (the one most recently pinned via pinSliceForBuild),
+    /// or nullptr when spilling is disabled / no slice is pinned yet. Used by build operators to route page allocations
+    /// into the slice's own spill arena. The returned pointer is valid while the worker keeps building this slice.
+    [[nodiscard]] Slice* getPinnedBuildSlice(WorkerThreadId workerThreadId) const;
+
 protected:
     /// Gets called if slices should be triggered once a window is ready to be emitted.
     /// Each window operator can be specific about what to do if the given slices are ready to be emitted
