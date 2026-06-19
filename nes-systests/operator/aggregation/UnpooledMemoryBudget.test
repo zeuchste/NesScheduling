@@ -3,10 +3,12 @@
 #              allocation error instead of letting unbounded operator state OOM-kill the worker.
 # groups: [Aggregation, WindowOperators]
 
-# Cap total unpooled (variable-sized) buffer memory at 1 KiB. Keyed-aggregation state (slice cache / hash-map pages)
-# is allocated from unpooled buffers, so it cannot be allocated within this budget and the query fails cleanly with
-# BufferAllocationFailure (3000) rather than exhausting physical memory and OOM-killing the worker.
-GlobalConfiguration worker.unpooled_memory_limit_in_bytes: [1024]
+# Carve a ~1 KiB unpooled budget out of a 100 MB total (100000000 * 0.00001 = 1000 bytes); the remainder still leaves
+# a healthy pooled pool. Keyed-aggregation state (slice cache / hash-map pages) is allocated from unpooled buffers, so
+# it cannot fit in this budget and the query fails cleanly with BufferAllocationFailure (3000) rather than exhausting
+# physical memory and OOM-killing the worker.
+GlobalConfiguration worker.total_memory_in_bytes: [100000000]
+GlobalConfiguration worker.unpooled_memory_fraction: [0.00001]
 
 CREATE LOGICAL SOURCE stream(id UINT64 NOT NULL, value UINT64 NOT NULL, timestamp UINT64 NOT NULL);
 CREATE PHYSICAL SOURCE FOR stream TYPE File;

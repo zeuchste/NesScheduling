@@ -21,6 +21,7 @@
 #include <Configurations/BaseOption.hpp>
 #include <Configurations/Enums/EnumOption.hpp>
 #include <Configurations/ScalarOption.hpp>
+#include <Configurations/Validation/FloatValidation.hpp>
 #include <Configurations/Validation/NumberValidation.hpp>
 #include <Util/DumpMode.hpp>
 #include <fmt/format.h>
@@ -42,21 +43,24 @@ public:
     QueryOptimizerConfiguration defaultQueryOptimization = {"default_query_optimization", "Default configuration for query optimizations"};
     WorkerNetworkConfiguration network = {"network", "Default configuration for network sources and sinks"};
 
-    /// The number of buffers in the global buffer manager. Controls how much memory is consumed by the system.
-    UIntOption numberOfBuffersInGlobalBufferManager
-        = {"number_of_buffers_in_global_buffer_manager",
-           "32768",
-           "Number buffers in global buffer pool.",
+    /// Total buffer memory budget for this worker, in bytes. The pooled pool and the unpooled budget are both derived
+    /// from this single ceiling (see unpooledMemoryFraction), so they cannot independently exceed it. 0 = auto-detect
+    /// (the cgroup memory limit if running in a container, else physical RAM). Set this to your buffer budget, i.e. the
+    /// container limit minus headroom for runtime/network/stacks, not the raw cgroup limit.
+    UIntOption totalMemoryInBytes
+        = {"total_memory_in_bytes",
+           "0",
+           "Total worker buffer memory in bytes (0 = auto: cgroup limit if containerized, else physical RAM).",
            {std::make_shared<NumberValidation>()}};
 
-    /// Hard cap on total unpooled (variable-sized) buffer memory in bytes, used by operator state (hash maps, paged
-    /// vectors, var-sized data). 0 = auto: a fraction of physical RAM minus the pooled pool. On breach, the requesting
-    /// query fails with CannotAllocateBuffer instead of the worker running out of physical memory.
-    UIntOption unpooledMemoryLimitInBytes
-        = {"unpooled_memory_limit_in_bytes",
-           "0",
-           "Hard cap on total unpooled buffer memory in bytes (0 = auto: a fraction of physical RAM minus the pooled pool).",
-           {std::make_shared<NumberValidation>()}};
+    /// Share of totalMemoryInBytes reserved for unpooled (variable-sized) operator state (hash maps, paged vectors,
+    /// var-sized data); the remainder sizes the pooled pool. Must be in (0, 1). On breach of the unpooled share, the
+    /// requesting query fails cleanly (CannotAllocateBuffer/BufferAllocationFailure) instead of the worker OOM-ing.
+    FloatOption unpooledMemoryFraction
+        = {"unpooled_memory_fraction",
+           "0.7",
+           "Fraction of total_memory_in_bytes reserved for unpooled operator state; the rest sizes the pooled pool (0..1).",
+           {std::make_shared<FloatValidation>()}};
 
     /// Indicates how many buffers a single data source can allocate. This property controls the backpressure mechanism as a data source that can't allocate new records can't ingest more data.
     UIntOption defaultMaxInflightBuffers
@@ -81,8 +85,8 @@ private:
             &defaultQueryExecution,
             &defaultQueryOptimization,
             &network,
-            &numberOfBuffersInGlobalBufferManager,
-            &unpooledMemoryLimitInBytes,
+            &totalMemoryInBytes,
+            &unpooledMemoryFraction,
             &defaultMaxInflightBuffers,
             &dumpQueryCompilationIR,
             &dumpGraph};
