@@ -87,8 +87,8 @@ public:
     /// @param numOfBuffers the total number of buffers in the pool
     /// @param withAlignment the alignment of each buffer, default is 64 so ony cache line aligned buffers, This value must be a pow of two and smaller than page size
     /// @param memoryResource resource for allocating and deallocating memory
-    /// @param unpooledMemoryLimitInBytes hard cap on total unpooled (variable-sized) buffer memory. 0 means auto:
-    ///        a fraction of physical RAM minus the pooled-pool footprint. On breach, getUnpooledBuffer returns nullopt.
+    /// @param unpooledMemoryLimitInBytes hard cap on total unpooled (variable-sized) buffer memory. 0 means unbounded.
+    ///        On breach, getUnpooledBuffer returns nullopt. The worker derives a concrete cap in NodeEngineBuilder.
     static std::shared_ptr<BufferManager> create(
         uint32_t bufferSize = DEFAULT_BUFFER_SIZE,
         uint32_t numOfBuffers = DEFAULT_NUMBER_OF_BUFFERS,

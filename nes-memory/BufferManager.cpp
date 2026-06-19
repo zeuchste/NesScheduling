@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <limits>
 #include <memory>
 #include <memory_resource>
 #include <mutex>
@@ -40,30 +41,6 @@
 namespace NES
 {
 
-namespace
-{
-/// Resolve the unpooled-memory budget. An explicit non-zero limit is used verbatim. Otherwise we derive a budget from
-/// physical RAM: a fraction of total RAM minus the pooled-pool footprint (which is already validated to fit). This caps
-/// unbounded operator state so a runaway query fails cleanly instead of the OS OOM-killing the whole worker.
-size_t resolveUnpooledMemoryLimit(const size_t pooledFootprintBytes, const size_t explicitLimitInBytes)
-{
-    if (explicitLimitInBytes > 0)
-    {
-        return explicitLimitInBytes;
-    }
-    constexpr double unpooledBudgetFractionOfRam = 0.7;
-    const size_t physicalMemoryInBytes = static_cast<size_t>(sysconf(_SC_PHYS_PAGES)) * static_cast<size_t>(sysconf(_SC_PAGE_SIZE));
-    const auto nesMemoryCeiling = static_cast<size_t>(static_cast<double>(physicalMemoryInBytes) * unpooledBudgetFractionOfRam);
-    /// Keep a small positive floor so tiny/over-provisioned pools still permit some unpooled allocation.
-    constexpr size_t minimumUnpooledBudget = 16UL * 1024 * 1024;
-    if (nesMemoryCeiling <= pooledFootprintBytes + minimumUnpooledBudget)
-    {
-        return minimumUnpooledBudget;
-    }
-    return nesMemoryCeiling - pooledFootprintBytes;
-}
-}
-
 BufferManager::BufferManager(
     Private,
     const uint32_t bufferSize,
@@ -72,8 +49,9 @@ BufferManager::BufferManager(
     const uint32_t withAlignment,
     const size_t unpooledMemoryLimitInBytes)
     : availableBuffers(numOfBuffers)
+    /// 0 means "unbounded" at this layer; the worker derives a concrete budget in NodeEngineBuilder and passes it here.
     , unpooledChunksManager(std::make_shared<UnpooledChunksManager>(
-          memoryResource, resolveUnpooledMemoryLimit(static_cast<size_t>(bufferSize) * numOfBuffers, unpooledMemoryLimitInBytes)))
+          memoryResource, unpooledMemoryLimitInBytes == 0 ? std::numeric_limits<size_t>::max() : unpooledMemoryLimitInBytes))
     , bufferSize(bufferSize)
     , numOfBuffers(numOfBuffers)
     , memoryResource(std::move(memoryResource))
