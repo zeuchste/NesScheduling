@@ -58,6 +58,9 @@ public:
 
     ArenaMemoryResource(const ArenaMemoryResource&) = delete;
     ArenaMemoryResource& operator=(const ArenaMemoryResource&) = delete;
+    /// Deleted: this resource exclusively owns an fd and a set of mmap regions, which cannot be moved.
+    ArenaMemoryResource(ArenaMemoryResource&&) = delete;
+    ArenaMemoryResource& operator=(ArenaMemoryResource&&) = delete;
 
     /// Move all resident pages out of DRAM. No-op if already evicted.
     /// @param ioLatencyUsPer4k optional synthetic per-4KB I/O latency (storage-speed knob for experiments; 0 = off)
@@ -76,7 +79,7 @@ public:
 
 protected:
     void* do_allocate(size_t bytes, size_t alignment) override;
-    void do_deallocate(void* p, size_t bytes, size_t alignment) override;
+    void do_deallocate(void* ptr, size_t bytes, size_t alignment) override;
     [[nodiscard]] bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override;
 
 private:

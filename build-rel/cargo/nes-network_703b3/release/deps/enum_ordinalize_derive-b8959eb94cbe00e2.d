@@ -1,0 +1,9 @@
+/tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/release/deps/enum_ordinalize_derive-b8959eb94cbe00e2.d: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/int128.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/int_wrapper.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/panic.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/variant_type.rs
+
+/tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/release/deps/libenum_ordinalize_derive-b8959eb94cbe00e2.so: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/int128.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/int_wrapper.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/panic.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/variant_type.rs
+
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/lib.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/int128.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/int_wrapper.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/panic.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/enum-ordinalize-derive-4.3.1/src/variant_type.rs:

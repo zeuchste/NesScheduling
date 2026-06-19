@@ -1,0 +1,14 @@
+/tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/aarch64-unknown-linux-gnu/release/deps/serde-9ece368bc7d25d55.d: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/aarch64-unknown-linux-gnu/release/build/serde-faf82f3995d76245/out/private.rs
+
+/tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/aarch64-unknown-linux-gnu/release/deps/libserde-9ece368bc7d25d55.rlib: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/aarch64-unknown-linux-gnu/release/build/serde-faf82f3995d76245/out/private.rs
+
+/tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/aarch64-unknown-linux-gnu/release/deps/libserde-9ece368bc7d25d55.rmeta: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/aarch64-unknown-linux-gnu/release/build/serde-faf82f3995d76245/out/private.rs
+
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/aarch64-unknown-linux-gnu/release/build/serde-faf82f3995d76245/out/private.rs:
+
+# env-dep:OUT_DIR=/tmp/nes-1699-tidy/build-rel/cargo/nes-network_703b3/aarch64-unknown-linux-gnu/release/build/serde-faf82f3995d76245/out

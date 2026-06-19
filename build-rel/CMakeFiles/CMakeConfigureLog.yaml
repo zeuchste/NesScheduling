@@ -1,0 +1,671 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:205 (message)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      The system is: Linux - 6.12.67-linuxkit - aarch64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCCompiler.cmake:123 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /usr/bin/cc 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is Clang, found in:
+        /tmp/nes-1699-tidy/build-rel/CMakeFiles/3.31.11/CompilerIdC/a.out
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCXXCompiler.cmake:126 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+      Compiler: /usr/bin/c++ 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "a.out"
+      
+      The CXX compiler identification is Clang, found in:
+        /tmp/nes-1699-tidy/build-rel/CMakeFiles/3.31.11/CompilerIdCXX/a.out
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:74 (try_compile)"
+      - "/usr/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:77 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-0TQf2w"
+      binary: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-0TQf2w"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps-19"
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      VCPKG_HOST_TRIPLET: "arm64-linux-none-libcxx"
+      VCPKG_INSTALLED_DIR: "/vcpkg/installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "arm64-linux-none-libcxx"
+      Z_VCPKG_ROOT_DIR: "/vcpkg"
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-0TQf2w'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_95e0b
+        [1/2] /usr/bin/cc   -v -MD -MT CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -MF CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake-3.31/Modules/CMakeCCompilerABI.c
+        Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)
+        Target: aarch64-unknown-linux-gnu
+        Thread model: posix
+        InstalledDir: /usr/lib/llvm-19/bin
+        Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/13
+        Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14
+        Selected GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14
+        Candidate multilib: .;@m64
+        Selected multilib: .;@m64
+         (in-process)
+         "/usr/lib/llvm-19/bin/clang" -cc1 -triple aarch64-unknown-linux-gnu -emit-obj -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -fmath-errno -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -target-cpu generic -target-feature +v8a -target-feature +fp-armv8 -target-feature +neon -target-abi aapcs -debugger-tuning=gdb -fdebug-compilation-dir=/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-0TQf2w -v -fcoverage-compilation-dir=/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-0TQf2w -resource-dir /usr/lib/llvm-19/lib/clang/19 -dependency-file CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o.d -MT CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -sys-header-deps -internal-isystem /usr/lib/llvm-19/lib/clang/19/include -internal-isystem /usr/local/include -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../aarch64-linux-gnu/include -internal-externc-isystem /usr/include/aarch64-linux-gnu -internal-externc-isystem /include -internal-externc-isystem /usr/include -ferror-limit 19 -fno-signed-char -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -target-feature +outline-atomics -target-feature -fmv -faddrsig -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -x c /usr/share/cmake-3.31/Modules/CMakeCCompilerABI.c
+        clang -cc1 version 19.1.7 based upon LLVM 19.1.7 default target aarch64-unknown-linux-gnu
+        ignoring nonexistent directory "/usr/lib/gcc/aarch64-linux-gnu/14/../../../../aarch64-linux-gnu/include"
+        ignoring nonexistent directory "/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/lib/llvm-19/lib/clang/19/include
+         /usr/local/include
+         /usr/include/aarch64-linux-gnu
+         /usr/include
+        End of search list.
+        [2/2] : && /usr/bin/cc  -v -Wl,-v CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -o cmTC_95e0b   && :
+        Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)
+        Target: aarch64-unknown-linux-gnu
+        Thread model: posix
+        InstalledDir: /usr/lib/llvm-19/bin
+        Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/13
+        Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14
+        Selected GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14
+        Candidate multilib: .;@m64
+        Selected multilib: .;@m64
+         "/usr/bin/ld" -EL -z relro --hash-style=gnu --build-id --eh-frame-hdr -m aarch64linux -pie -dynamic-linker /lib/ld-linux-aarch64.so.1 -o cmTC_95e0b /lib/aarch64-linux-gnu/Scrt1.o /lib/aarch64-linux-gnu/crti.o /usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/aarch64-linux-gnu/14 -L/lib/aarch64-linux-gnu -L/usr/lib/aarch64-linux-gnu -L/usr/lib/llvm-19/bin/../lib -L/lib -L/usr/lib -v CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -lgcc --as-needed -lgcc_s --no-as-needed -lc -lgcc --as-needed -lgcc_s --no-as-needed /usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o /lib/aarch64-linux-gnu/crtn.o
+        GNU ld (GNU Binutils for Ubuntu) 2.42
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:182 (message)"
+      - "/usr/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/lib/llvm-19/lib/clang/19/include]
+          add: [/usr/local/include]
+          add: [/usr/include/aarch64-linux-gnu]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/lib/llvm-19/lib/clang/19/include] ==> [/usr/lib/llvm-19/lib/clang/19/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include/aarch64-linux-gnu] ==> [/usr/include/aarch64-linux-gnu]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/lib/llvm-19/lib/clang/19/include;/usr/local/include;/usr/include/aarch64-linux-gnu;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:218 (message)"
+      - "/usr/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(\\.[a-z]+)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(\\.[a-z]+)?))("|,| |$)]
+        ignore line: [Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-0TQf2w']
+        ignore line: []
+        ignore line: [Run Build Command(s): /usr/bin/ninja -v cmTC_95e0b]
+        ignore line: [[1/2] /usr/bin/cc   -v -MD -MT CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -MF CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake-3.31/Modules/CMakeCCompilerABI.c]
+        ignore line: [Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)]
+        ignore line: [Target: aarch64-unknown-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /usr/lib/llvm-19/bin]
+        ignore line: [Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/13]
+        ignore line: [Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14]
+        ignore line: [Selected GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        ignore line: [ (in-process)]
+        ignore line: [ "/usr/lib/llvm-19/bin/clang" -cc1 -triple aarch64-unknown-linux-gnu -emit-obj -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -fmath-errno -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -target-cpu generic -target-feature +v8a -target-feature +fp-armv8 -target-feature +neon -target-abi aapcs -debugger-tuning=gdb -fdebug-compilation-dir=/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-0TQf2w -v -fcoverage-compilation-dir=/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-0TQf2w -resource-dir /usr/lib/llvm-19/lib/clang/19 -dependency-file CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o.d -MT CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -sys-header-deps -internal-isystem /usr/lib/llvm-19/lib/clang/19/include -internal-isystem /usr/local/include -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../aarch64-linux-gnu/include -internal-externc-isystem /usr/include/aarch64-linux-gnu -internal-externc-isystem /include -internal-externc-isystem /usr/include -ferror-limit 19 -fno-signed-char -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -target-feature +outline-atomics -target-feature -fmv -faddrsig -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -x c /usr/share/cmake-3.31/Modules/CMakeCCompilerABI.c]
+        ignore line: [clang -cc1 version 19.1.7 based upon LLVM 19.1.7 default target aarch64-unknown-linux-gnu]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/aarch64-linux-gnu/14/../../../../aarch64-linux-gnu/include"]
+        ignore line: [ignoring nonexistent directory "/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/lib/llvm-19/lib/clang/19/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include/aarch64-linux-gnu]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [[2/2] : && /usr/bin/cc  -v -Wl -v CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -o cmTC_95e0b   && :]
+        ignore line: [Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)]
+        ignore line: [Target: aarch64-unknown-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /usr/lib/llvm-19/bin]
+        ignore line: [Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/13]
+        ignore line: [Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14]
+        ignore line: [Selected GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        link line: [ "/usr/bin/ld" -EL -z relro --hash-style=gnu --build-id --eh-frame-hdr -m aarch64linux -pie -dynamic-linker /lib/ld-linux-aarch64.so.1 -o cmTC_95e0b /lib/aarch64-linux-gnu/Scrt1.o /lib/aarch64-linux-gnu/crti.o /usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/aarch64-linux-gnu/14 -L/lib/aarch64-linux-gnu -L/usr/lib/aarch64-linux-gnu -L/usr/lib/llvm-19/bin/../lib -L/lib -L/usr/lib -v CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o -lgcc --as-needed -lgcc_s --no-as-needed -lc -lgcc --as-needed -lgcc_s --no-as-needed /usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o /lib/aarch64-linux-gnu/crtn.o]
+          arg [/usr/bin/ld] ==> ignore
+          arg [-EL] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [aarch64linux] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib/ld-linux-aarch64.so.1] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_95e0b] ==> ignore
+          arg [/lib/aarch64-linux-gnu/Scrt1.o] ==> obj [/lib/aarch64-linux-gnu/Scrt1.o]
+          arg [/lib/aarch64-linux-gnu/crti.o] ==> obj [/lib/aarch64-linux-gnu/crti.o]
+          arg [/usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o] ==> obj [/usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o]
+          arg [-L/usr/lib/gcc/aarch64-linux-gnu/14] ==> dir [/usr/lib/gcc/aarch64-linux-gnu/14]
+          arg [-L/lib/aarch64-linux-gnu] ==> dir [/lib/aarch64-linux-gnu]
+          arg [-L/usr/lib/aarch64-linux-gnu] ==> dir [/usr/lib/aarch64-linux-gnu]
+          arg [-L/usr/lib/llvm-19/bin/../lib] ==> dir [/usr/lib/llvm-19/bin/../lib]
+          arg [-L/lib] ==> dir [/lib]
+          arg [-L/usr/lib] ==> dir [/usr/lib]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_95e0b.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lgcc] ==> lib [gcc]
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--no-as-needed] ==> ignore
+          arg [-lc] ==> lib [c]
+          arg [-lgcc] ==> lib [gcc]
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--no-as-needed] ==> ignore
+          arg [/usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o] ==> obj [/usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o]
+          arg [/lib/aarch64-linux-gnu/crtn.o] ==> obj [/lib/aarch64-linux-gnu/crtn.o]
+        linker tool for 'C': /usr/bin/ld
+        collapse library dir [/usr/lib/gcc/aarch64-linux-gnu/14] ==> [/usr/lib/gcc/aarch64-linux-gnu/14]
+        collapse library dir [/lib/aarch64-linux-gnu] ==> [/lib/aarch64-linux-gnu]
+        collapse library dir [/usr/lib/aarch64-linux-gnu] ==> [/usr/lib/aarch64-linux-gnu]
+        collapse library dir [/usr/lib/llvm-19/bin/../lib] ==> [/usr/lib/llvm-19/lib]
+        collapse library dir [/lib] ==> [/lib]
+        collapse library dir [/usr/lib] ==> [/usr/lib]
+        implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+        implicit objs: [/lib/aarch64-linux-gnu/Scrt1.o;/lib/aarch64-linux-gnu/crti.o;/usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o;/usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o;/lib/aarch64-linux-gnu/crtn.o]
+        implicit dirs: [/usr/lib/gcc/aarch64-linux-gnu/14;/lib/aarch64-linux-gnu;/usr/lib/aarch64-linux-gnu;/usr/lib/llvm-19/lib;/lib;/usr/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/Internal/CMakeDetermineLinkerId.cmake:40 (message)"
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:255 (cmake_determine_linker_id)"
+      - "/usr/share/cmake-3.31/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      Running the C compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils for Ubuntu) 2.42
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:74 (try_compile)"
+      - "/usr/share/cmake-3.31/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:77 (project)"
+    checks:
+      - "Detecting CXX compiler ABI info"
+    directories:
+      source: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-Kf2pB5"
+      binary: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-Kf2pB5"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps-19"
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_CXX_SCAN_FOR_MODULES: "OFF"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      VCPKG_HOST_TRIPLET: "arm64-linux-none-libcxx"
+      VCPKG_INSTALLED_DIR: "/vcpkg/installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "arm64-linux-none-libcxx"
+      Z_VCPKG_ROOT_DIR: "/vcpkg"
+    buildResult:
+      variable: "CMAKE_CXX_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-Kf2pB5'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_00a9a
+        [1/2] /usr/bin/c++   -v -MD -MT CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-3.31/Modules/CMakeCXXCompilerABI.cpp
+        Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)
+        Target: aarch64-unknown-linux-gnu
+        Thread model: posix
+        InstalledDir: /usr/lib/llvm-19/bin
+        Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/13
+        Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14
+        Selected GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14
+        Candidate multilib: .;@m64
+        Selected multilib: .;@m64
+         (in-process)
+         "/usr/lib/llvm-19/bin/clang" -cc1 -triple aarch64-unknown-linux-gnu -emit-obj -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -fmath-errno -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -target-cpu generic -target-feature +v8a -target-feature +fp-armv8 -target-feature +neon -target-abi aapcs -debugger-tuning=gdb -fdebug-compilation-dir=/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-Kf2pB5 -v -fcoverage-compilation-dir=/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-Kf2pB5 -resource-dir /usr/lib/llvm-19/lib/clang/19 -dependency-file CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14 -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/aarch64-linux-gnu/c++/14 -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14/backward -internal-isystem /usr/lib/llvm-19/lib/clang/19/include -internal-isystem /usr/local/include -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../aarch64-linux-gnu/include -internal-externc-isystem /usr/include/aarch64-linux-gnu -internal-externc-isystem /include -internal-externc-isystem /usr/include -fdeprecated-macro -ferror-limit 19 -fno-signed-char -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -fcxx-exceptions -fexceptions -target-feature +outline-atomics -target-feature -fmv -faddrsig -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -x c++ /usr/share/cmake-3.31/Modules/CMakeCXXCompilerABI.cpp
+        clang -cc1 version 19.1.7 based upon LLVM 19.1.7 default target aarch64-unknown-linux-gnu
+        ignoring nonexistent directory "/usr/lib/gcc/aarch64-linux-gnu/14/../../../../aarch64-linux-gnu/include"
+        ignoring nonexistent directory "/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14
+         /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/aarch64-linux-gnu/c++/14
+         /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14/backward
+         /usr/lib/llvm-19/lib/clang/19/include
+         /usr/local/include
+         /usr/include/aarch64-linux-gnu
+         /usr/include
+        End of search list.
+        [2/2] : && /usr/bin/c++  -v -Wl,-v CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_00a9a   && :
+        Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)
+        Target: aarch64-unknown-linux-gnu
+        Thread model: posix
+        InstalledDir: /usr/lib/llvm-19/bin
+        Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/13
+        Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14
+        Selected GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14
+        Candidate multilib: .;@m64
+        Selected multilib: .;@m64
+         "/usr/bin/ld" -EL -z relro --hash-style=gnu --build-id --eh-frame-hdr -m aarch64linux -pie -dynamic-linker /lib/ld-linux-aarch64.so.1 -o cmTC_00a9a /lib/aarch64-linux-gnu/Scrt1.o /lib/aarch64-linux-gnu/crti.o /usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/aarch64-linux-gnu/14 -L/lib/aarch64-linux-gnu -L/usr/lib/aarch64-linux-gnu -L/usr/lib/llvm-19/bin/../lib -L/lib -L/usr/lib -v CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o /lib/aarch64-linux-gnu/crtn.o
+        GNU ld (GNU Binutils for Ubuntu) 2.42
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:182 (message)"
+      - "/usr/share/cmake-3.31/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      Parsed CXX implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14]
+          add: [/usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/aarch64-linux-gnu/c++/14]
+          add: [/usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14/backward]
+          add: [/usr/lib/llvm-19/lib/clang/19/include]
+          add: [/usr/local/include]
+          add: [/usr/include/aarch64-linux-gnu]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14] ==> [/usr/include/c++/14]
+        collapse include dir [/usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/aarch64-linux-gnu/c++/14] ==> [/usr/include/aarch64-linux-gnu/c++/14]
+        collapse include dir [/usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14/backward] ==> [/usr/include/c++/14/backward]
+        collapse include dir [/usr/lib/llvm-19/lib/clang/19/include] ==> [/usr/lib/llvm-19/lib/clang/19/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include/aarch64-linux-gnu] ==> [/usr/include/aarch64-linux-gnu]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/include/c++/14;/usr/include/aarch64-linux-gnu/c++/14;/usr/include/c++/14/backward;/usr/lib/llvm-19/lib/clang/19/include;/usr/local/include;/usr/include/aarch64-linux-gnu;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:218 (message)"
+      - "/usr/share/cmake-3.31/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(\\.[a-z]+)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(\\.[a-z]+)?))("|,| |$)]
+        ignore line: [Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-Kf2pB5']
+        ignore line: []
+        ignore line: [Run Build Command(s): /usr/bin/ninja -v cmTC_00a9a]
+        ignore line: [[1/2] /usr/bin/c++   -v -MD -MT CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake-3.31/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)]
+        ignore line: [Target: aarch64-unknown-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /usr/lib/llvm-19/bin]
+        ignore line: [Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/13]
+        ignore line: [Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14]
+        ignore line: [Selected GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        ignore line: [ (in-process)]
+        ignore line: [ "/usr/lib/llvm-19/bin/clang" -cc1 -triple aarch64-unknown-linux-gnu -emit-obj -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -fmath-errno -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -target-cpu generic -target-feature +v8a -target-feature +fp-armv8 -target-feature +neon -target-abi aapcs -debugger-tuning=gdb -fdebug-compilation-dir=/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-Kf2pB5 -v -fcoverage-compilation-dir=/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-Kf2pB5 -resource-dir /usr/lib/llvm-19/lib/clang/19 -dependency-file CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14 -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/aarch64-linux-gnu/c++/14 -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14/backward -internal-isystem /usr/lib/llvm-19/lib/clang/19/include -internal-isystem /usr/local/include -internal-isystem /usr/lib/gcc/aarch64-linux-gnu/14/../../../../aarch64-linux-gnu/include -internal-externc-isystem /usr/include/aarch64-linux-gnu -internal-externc-isystem /include -internal-externc-isystem /usr/include -fdeprecated-macro -ferror-limit 19 -fno-signed-char -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -fcxx-exceptions -fexceptions -target-feature +outline-atomics -target-feature -fmv -faddrsig -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -x c++ /usr/share/cmake-3.31/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [clang -cc1 version 19.1.7 based upon LLVM 19.1.7 default target aarch64-unknown-linux-gnu]
+        ignore line: [ignoring nonexistent directory "/usr/lib/gcc/aarch64-linux-gnu/14/../../../../aarch64-linux-gnu/include"]
+        ignore line: [ignoring nonexistent directory "/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14]
+        ignore line: [ /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/aarch64-linux-gnu/c++/14]
+        ignore line: [ /usr/lib/gcc/aarch64-linux-gnu/14/../../../../include/c++/14/backward]
+        ignore line: [ /usr/lib/llvm-19/lib/clang/19/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include/aarch64-linux-gnu]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [[2/2] : && /usr/bin/c++  -v -Wl -v CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_00a9a   && :]
+        ignore line: [Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)]
+        ignore line: [Target: aarch64-unknown-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /usr/lib/llvm-19/bin]
+        ignore line: [Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/13]
+        ignore line: [Found candidate GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14]
+        ignore line: [Selected GCC installation: /usr/lib/gcc/aarch64-linux-gnu/14]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        link line: [ "/usr/bin/ld" -EL -z relro --hash-style=gnu --build-id --eh-frame-hdr -m aarch64linux -pie -dynamic-linker /lib/ld-linux-aarch64.so.1 -o cmTC_00a9a /lib/aarch64-linux-gnu/Scrt1.o /lib/aarch64-linux-gnu/crti.o /usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o -L/usr/lib/gcc/aarch64-linux-gnu/14 -L/lib/aarch64-linux-gnu -L/usr/lib/aarch64-linux-gnu -L/usr/lib/llvm-19/bin/../lib -L/lib -L/usr/lib -v CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o /lib/aarch64-linux-gnu/crtn.o]
+          arg [/usr/bin/ld] ==> ignore
+          arg [-EL] ==> ignore
+          arg [-zrelro] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [aarch64linux] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib/ld-linux-aarch64.so.1] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_00a9a] ==> ignore
+          arg [/lib/aarch64-linux-gnu/Scrt1.o] ==> obj [/lib/aarch64-linux-gnu/Scrt1.o]
+          arg [/lib/aarch64-linux-gnu/crti.o] ==> obj [/lib/aarch64-linux-gnu/crti.o]
+          arg [/usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o] ==> obj [/usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o]
+          arg [-L/usr/lib/gcc/aarch64-linux-gnu/14] ==> dir [/usr/lib/gcc/aarch64-linux-gnu/14]
+          arg [-L/lib/aarch64-linux-gnu] ==> dir [/lib/aarch64-linux-gnu]
+          arg [-L/usr/lib/aarch64-linux-gnu] ==> dir [/usr/lib/aarch64-linux-gnu]
+          arg [-L/usr/lib/llvm-19/bin/../lib] ==> dir [/usr/lib/llvm-19/bin/../lib]
+          arg [-L/lib] ==> dir [/lib]
+          arg [-L/usr/lib] ==> dir [/usr/lib]
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_00a9a.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [-lstdc++] ==> lib [stdc++]
+          arg [-lm] ==> lib [m]
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [-lgcc] ==> lib [gcc]
+          arg [-lc] ==> lib [c]
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [-lgcc] ==> lib [gcc]
+          arg [/usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o] ==> obj [/usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o]
+          arg [/lib/aarch64-linux-gnu/crtn.o] ==> obj [/lib/aarch64-linux-gnu/crtn.o]
+        linker tool for 'CXX': /usr/bin/ld
+        collapse library dir [/usr/lib/gcc/aarch64-linux-gnu/14] ==> [/usr/lib/gcc/aarch64-linux-gnu/14]
+        collapse library dir [/lib/aarch64-linux-gnu] ==> [/lib/aarch64-linux-gnu]
+        collapse library dir [/usr/lib/aarch64-linux-gnu] ==> [/usr/lib/aarch64-linux-gnu]
+        collapse library dir [/usr/lib/llvm-19/bin/../lib] ==> [/usr/lib/llvm-19/lib]
+        collapse library dir [/lib] ==> [/lib]
+        collapse library dir [/usr/lib] ==> [/usr/lib]
+        implicit libs: [stdc++;m;gcc_s;gcc;c;gcc_s;gcc]
+        implicit objs: [/lib/aarch64-linux-gnu/Scrt1.o;/lib/aarch64-linux-gnu/crti.o;/usr/lib/gcc/aarch64-linux-gnu/14/crtbeginS.o;/usr/lib/gcc/aarch64-linux-gnu/14/crtendS.o;/lib/aarch64-linux-gnu/crtn.o]
+        implicit dirs: [/usr/lib/gcc/aarch64-linux-gnu/14;/lib/aarch64-linux-gnu;/usr/lib/aarch64-linux-gnu;/usr/lib/llvm-19/lib;/lib;/usr/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/Internal/CMakeDetermineLinkerId.cmake:40 (message)"
+      - "/usr/share/cmake-3.31/Modules/CMakeDetermineCompilerABI.cmake:255 (cmake_determine_linker_id)"
+      - "/usr/share/cmake-3.31/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:77 (project)"
+    message: |
+      Running the CXX compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils for Ubuntu) 2.42
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/share/cmake-3.31/Modules/CheckCXXSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "cmake/CheckToolchain.cmake:26 (check_cxx_source_compiles)"
+      - "CMakeLists.txt:126 (include)"
+    checks:
+      - "Performing Test LIBCXX_VERSION_CHECK"
+    directories:
+      source: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-82YQs4"
+      binary: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-82YQs4"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps-19"
+      CMAKE_CXX_FLAGS: "-Wall -Wconstant-conversion -Wbitwise-instead-of-logical -Wextra -pedantic -Wno-null-character -Wno-dollar-in-identifier-extension -Werror=extra -Werror=exceptions -Werror=all -Werror=integer-overflow -Werror=return-type -Werror=return-stack-address -Werror=delete-non-virtual-dtor -Werror=deprecated -Werror=writable-strings -Werror=array-bounds -Werror=ignored-qualifiers -Werror=sign-compare -Wno-deprecated-copy-with-dtor -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-declarations -Wno-invalid-offsetof -Wno-nullability-extension -fno-omit-frame-pointer "
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/tmp/nes-1699-tidy/cmake;"
+      CMAKE_POSITION_INDEPENDENT_CODE: "ON"
+      VCPKG_HOST_TRIPLET: "arm64-linux-none-libcxx"
+      VCPKG_INSTALLED_DIR: "/vcpkg/installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "arm64-linux-none-libcxx"
+      Z_VCPKG_ROOT_DIR: "/vcpkg"
+    buildResult:
+      variable: "LIBCXX_VERSION_CHECK"
+      cached: true
+      stdout: |
+        Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-82YQs4'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_3abc0
+        [1/4] "/usr/bin/clang-scan-deps-19" -format=p1689 -- /usr/bin/c++ -DLIBCXX_VERSION_CHECK  -Wall -Wconstant-conversion -Wbitwise-instead-of-logical -Wextra -pedantic -Wno-null-character -Wno-dollar-in-identifier-extension -Werror=extra -Werror=exceptions -Werror=all -Werror=integer-overflow -Werror=return-type -Werror=return-stack-address -Werror=delete-non-virtual-dtor -Werror=deprecated -Werror=writable-strings -Werror=array-bounds -Werror=ignored-qualifiers -Werror=sign-compare -Wno-deprecated-copy-with-dtor -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-declarations -Wno-invalid-offsetof -Wno-nullability-extension -fno-omit-frame-pointer  -std=c++23 -stdlib=libc++ -std=gnu++23 -fPIE -x c++ /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-82YQs4/src.cxx -c -o CMakeFiles/cmTC_3abc0.dir/src.cxx.o -resource-dir "/usr/lib/llvm-19/lib/clang/19" -MT CMakeFiles/cmTC_3abc0.dir/src.cxx.o.ddi -MD -MF CMakeFiles/cmTC_3abc0.dir/src.cxx.o.ddi.d > CMakeFiles/cmTC_3abc0.dir/src.cxx.o.ddi.tmp && mv CMakeFiles/cmTC_3abc0.dir/src.cxx.o.ddi.tmp CMakeFiles/cmTC_3abc0.dir/src.cxx.o.ddi
+        [2/4] /usr/bin/cmake -E cmake_ninja_dyndep --tdi=CMakeFiles/cmTC_3abc0.dir/CXXDependInfo.json --lang=CXX --modmapfmt=clang --dd=CMakeFiles/cmTC_3abc0.dir/CXX.dd @CMakeFiles/cmTC_3abc0.dir/CXX.dd.rsp
+        [3/4] /usr/bin/c++ -DLIBCXX_VERSION_CHECK  -Wall -Wconstant-conversion -Wbitwise-instead-of-logical -Wextra -pedantic -Wno-null-character -Wno-dollar-in-identifier-extension -Werror=extra -Werror=exceptions -Werror=all -Werror=integer-overflow -Werror=return-type -Werror=return-stack-address -Werror=delete-non-virtual-dtor -Werror=deprecated -Werror=writable-strings -Werror=array-bounds -Werror=ignored-qualifiers -Werror=sign-compare -Wno-deprecated-copy-with-dtor -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-declarations -Wno-invalid-offsetof -Wno-nullability-extension -fno-omit-frame-pointer  -std=c++23 -stdlib=libc++ -std=gnu++23 -fPIE -MD -MT CMakeFiles/cmTC_3abc0.dir/src.cxx.o -MF CMakeFiles/cmTC_3abc0.dir/src.cxx.o.d @CMakeFiles/cmTC_3abc0.dir/src.cxx.o.modmap -o CMakeFiles/cmTC_3abc0.dir/src.cxx.o -c /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-82YQs4/src.cxx
+        [4/4] : && /usr/bin/c++ -Wall -Wconstant-conversion -Wbitwise-instead-of-logical -Wextra -pedantic -Wno-null-character -Wno-dollar-in-identifier-extension -Werror=extra -Werror=exceptions -Werror=all -Werror=integer-overflow -Werror=return-type -Werror=return-stack-address -Werror=delete-non-virtual-dtor -Werror=deprecated -Werror=writable-strings -Werror=array-bounds -Werror=ignored-qualifiers -Werror=sign-compare -Wno-deprecated-copy-with-dtor -Wno-unused-variable -Wno-unused-but-set-variable -Wno-deprecated-declarations -Wno-invalid-offsetof -Wno-nullability-extension -fno-omit-frame-pointer  -std=c++23 -stdlib=libc++  CMakeFiles/cmTC_3abc0.dir/src.cxx.o -o cmTC_3abc0   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/Internal/CheckSourceCompiles.cmake:108 (try_compile)"
+      - "/usr/share/cmake-3.31/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "/usr/share/cmake-3.31/Modules/FindThreads.cmake:97 (CHECK_C_SOURCE_COMPILES)"
+      - "/usr/share/cmake-3.31/Modules/FindThreads.cmake:163 (_threads_check_libc)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:939 (_find_package)"
+      - "/usr/share/cmake-3.31/Modules/CMakeFindDependencyMacro.cmake:76 (find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/absl/abslConfig.cmake:4 (find_dependency)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:939 (_find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/protobuf/protobuf-config.cmake:7 (find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/protobuf/vcpkg-cmake-wrapper.cmake:3 (_find_package)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:893 (include)"
+      - "CMakeLists.txt:182 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-BIboVk"
+      binary: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-BIboVk"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps-19"
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/tmp/nes-1699-tidy/cmake;"
+      CMAKE_POSITION_INDEPENDENT_CODE: "ON"
+      VCPKG_HOST_TRIPLET: "arm64-linux-none-libcxx"
+      VCPKG_INSTALLED_DIR: "/vcpkg/installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "arm64-linux-none-libcxx"
+      Z_VCPKG_ROOT_DIR: "/vcpkg"
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-BIboVk'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_bbf03
+        [1/2] /usr/bin/cc -DCMAKE_HAVE_LIBC_PTHREAD  -std=c++23 -stdlib=libc++ -fPIE -MD -MT CMakeFiles/cmTC_bbf03.dir/src.c.o -MF CMakeFiles/cmTC_bbf03.dir/src.c.o.d -o CMakeFiles/cmTC_bbf03.dir/src.c.o -c /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-BIboVk/src.c
+        FAILED: CMakeFiles/cmTC_bbf03.dir/src.c.o 
+        /usr/bin/cc -DCMAKE_HAVE_LIBC_PTHREAD  -std=c++23 -stdlib=libc++ -fPIE -MD -MT CMakeFiles/cmTC_bbf03.dir/src.c.o -MF CMakeFiles/cmTC_bbf03.dir/src.c.o.d -o CMakeFiles/cmTC_bbf03.dir/src.c.o -c /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-BIboVk/src.c
+        cc: warning: argument unused during compilation: '-stdlib=libc++' [-Wunused-command-line-argument]
+        error: invalid argument '-std=c++23' not allowed with 'C'
+        ninja: build stopped: subcommand failed.
+        
+      exitCode: 1
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CheckLibraryExists.cmake:78 (try_compile)"
+      - "/usr/share/cmake-3.31/Modules/FindThreads.cmake:112 (CHECK_LIBRARY_EXISTS)"
+      - "/usr/share/cmake-3.31/Modules/FindThreads.cmake:175 (_threads_check_lib)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:939 (_find_package)"
+      - "/usr/share/cmake-3.31/Modules/CMakeFindDependencyMacro.cmake:76 (find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/absl/abslConfig.cmake:4 (find_dependency)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:939 (_find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/protobuf/protobuf-config.cmake:7 (find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/protobuf/vcpkg-cmake-wrapper.cmake:3 (_find_package)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:893 (include)"
+      - "CMakeLists.txt:182 (find_package)"
+    checks:
+      - "Looking for pthread_create in pthreads"
+    directories:
+      source: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-wEXWII"
+      binary: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-wEXWII"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps-19"
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/tmp/nes-1699-tidy/cmake;"
+      CMAKE_POSITION_INDEPENDENT_CODE: "ON"
+      VCPKG_HOST_TRIPLET: "arm64-linux-none-libcxx"
+      VCPKG_INSTALLED_DIR: "/vcpkg/installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "arm64-linux-none-libcxx"
+      Z_VCPKG_ROOT_DIR: "/vcpkg"
+    buildResult:
+      variable: "CMAKE_HAVE_PTHREADS_CREATE"
+      cached: true
+      stdout: |
+        Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-wEXWII'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_b1060
+        [1/2] /usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create -std=c++23 -stdlib=libc++ -fPIE -MD -MT CMakeFiles/cmTC_b1060.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_b1060.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_b1060.dir/CheckFunctionExists.c.o -c /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-wEXWII/CheckFunctionExists.c
+        FAILED: CMakeFiles/cmTC_b1060.dir/CheckFunctionExists.c.o 
+        /usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create -std=c++23 -stdlib=libc++ -fPIE -MD -MT CMakeFiles/cmTC_b1060.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_b1060.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_b1060.dir/CheckFunctionExists.c.o -c /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-wEXWII/CheckFunctionExists.c
+        cc: warning: argument unused during compilation: '-stdlib=libc++' [-Wunused-command-line-argument]
+        error: invalid argument '-std=c++23' not allowed with 'C'
+        ninja: build stopped: subcommand failed.
+        
+      exitCode: 1
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/CheckLibraryExists.cmake:78 (try_compile)"
+      - "/usr/share/cmake-3.31/Modules/FindThreads.cmake:112 (CHECK_LIBRARY_EXISTS)"
+      - "/usr/share/cmake-3.31/Modules/FindThreads.cmake:176 (_threads_check_lib)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:939 (_find_package)"
+      - "/usr/share/cmake-3.31/Modules/CMakeFindDependencyMacro.cmake:76 (find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/absl/abslConfig.cmake:4 (find_dependency)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:939 (_find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/protobuf/protobuf-config.cmake:7 (find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/protobuf/vcpkg-cmake-wrapper.cmake:3 (_find_package)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:893 (include)"
+      - "CMakeLists.txt:182 (find_package)"
+    checks:
+      - "Looking for pthread_create in pthread"
+    directories:
+      source: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-hj9PTh"
+      binary: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-hj9PTh"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps-19"
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/tmp/nes-1699-tidy/cmake;"
+      CMAKE_POSITION_INDEPENDENT_CODE: "ON"
+      VCPKG_HOST_TRIPLET: "arm64-linux-none-libcxx"
+      VCPKG_INSTALLED_DIR: "/vcpkg/installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "arm64-linux-none-libcxx"
+      Z_VCPKG_ROOT_DIR: "/vcpkg"
+    buildResult:
+      variable: "CMAKE_HAVE_PTHREAD_CREATE"
+      cached: true
+      stdout: |
+        Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-hj9PTh'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_f51f6
+        [1/2] /usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create -std=c++23 -stdlib=libc++ -fPIE -MD -MT CMakeFiles/cmTC_f51f6.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_f51f6.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_f51f6.dir/CheckFunctionExists.c.o -c /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-hj9PTh/CheckFunctionExists.c
+        FAILED: CMakeFiles/cmTC_f51f6.dir/CheckFunctionExists.c.o 
+        /usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create -std=c++23 -stdlib=libc++ -fPIE -MD -MT CMakeFiles/cmTC_f51f6.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_f51f6.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_f51f6.dir/CheckFunctionExists.c.o -c /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-hj9PTh/CheckFunctionExists.c
+        cc: warning: argument unused during compilation: '-stdlib=libc++' [-Wunused-command-line-argument]
+        error: invalid argument '-std=c++23' not allowed with 'C'
+        ninja: build stopped: subcommand failed.
+        
+      exitCode: 1
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.31/Modules/FindThreads.cmake:136 (try_compile)"
+      - "/usr/share/cmake-3.31/Modules/FindThreads.cmake:179 (_threads_check_flag_pthread)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:939 (_find_package)"
+      - "/usr/share/cmake-3.31/Modules/CMakeFindDependencyMacro.cmake:76 (find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/absl/abslConfig.cmake:4 (find_dependency)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:939 (_find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/protobuf/protobuf-config.cmake:7 (find_package)"
+      - "/vcpkg/installed/arm64-linux-none-libcxx/share/protobuf/vcpkg-cmake-wrapper.cmake:3 (_find_package)"
+      - "/vcpkg/scripts/buildsystems/vcpkg.cmake:893 (include)"
+      - "CMakeLists.txt:182 (find_package)"
+    checks:
+      - "Check if compiler accepts -pthread"
+    directories:
+      source: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-W6mGSC"
+      binary: "/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-W6mGSC"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps-19"
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_MODULE_PATH: "/tmp/nes-1699-tidy/cmake;"
+      CMAKE_POSITION_INDEPENDENT_CODE: "ON"
+      VCPKG_HOST_TRIPLET: "arm64-linux-none-libcxx"
+      VCPKG_INSTALLED_DIR: "/vcpkg/installed"
+      VCPKG_PREFER_SYSTEM_LIBS: "OFF"
+      VCPKG_TARGET_TRIPLET: "arm64-linux-none-libcxx"
+      Z_VCPKG_ROOT_DIR: "/vcpkg"
+    buildResult:
+      variable: "THREADS_HAVE_PTHREAD_ARG"
+      cached: true
+      stdout: |
+        Change Dir: '/tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-W6mGSC'
+        
+        Run Build Command(s): /usr/bin/ninja -v cmTC_b3c88
+        [1/2] /usr/bin/cc   -fPIE -MD -MT CMakeFiles/cmTC_b3c88.dir/CheckForPthreads.c.o -MF CMakeFiles/cmTC_b3c88.dir/CheckForPthreads.c.o.d -o CMakeFiles/cmTC_b3c88.dir/CheckForPthreads.c.o -c /tmp/nes-1699-tidy/build-rel/CMakeFiles/CMakeScratch/TryCompile-W6mGSC/CheckForPthreads.c
+        [2/2] : && /usr/bin/cc   CMakeFiles/cmTC_b3c88.dir/CheckForPthreads.c.o -o cmTC_b3c88  -pthread && :
+        
+      exitCode: 0
+...

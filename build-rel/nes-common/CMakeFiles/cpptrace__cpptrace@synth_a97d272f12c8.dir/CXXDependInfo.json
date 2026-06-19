@@ -1,0 +1,37 @@
+{
+	"bmi-installation" : null,
+	"compiler-frontend-variant" : "GNU",
+	"compiler-id" : "Clang",
+	"compiler-simulate-id" : "",
+	"config" : "Release",
+	"cxx-modules" : 
+	{
+		"nes-common/CMakeFiles/cpptrace__cpptrace@synth_a97d272f12c8.dir/9b754b3e8cde.bmi" : 
+		{
+			"bmi-only" : true,
+			"destination" : null,
+			"name" : "CXX_MODULES",
+			"relative-directory" : "",
+			"source" : "/vcpkg/installed/arm64-linux-none-libcxx/share/cpptrace/cpptrace.cppm",
+			"type" : "CXX_MODULES",
+			"visibility" : "INTERFACE"
+		}
+	},
+	"database-info" : null,
+	"dir-cur-bld" : "/tmp/nes-1699-tidy/build-rel/nes-common",
+	"dir-cur-src" : "/tmp/nes-1699-tidy/nes-common",
+	"dir-top-bld" : "/tmp/nes-1699-tidy/build-rel",
+	"dir-top-src" : "/tmp/nes-1699-tidy",
+	"exports" : [],
+	"forward-modules-from-target-dirs" : [],
+	"include-dirs" : 
+	[
+		"/vcpkg_input/vcpkg_repository/buildtrees/cpptrace/src/v1.0.4-b2334d8f8f.clean/src",
+		"/vcpkg/installed/arm64-linux-none-libcxx/include",
+		"/vcpkg/installed/arm64-linux-none-libcxx/include/libdwarf"
+	],
+	"language" : "CXX",
+	"linked-target-dirs" : [],
+	"module-dir" : "/tmp/nes-1699-tidy/build-rel/nes-common/CMakeFiles/cpptrace__cpptrace@synth_a97d272f12c8.dir",
+	"sources" : {}
+}
