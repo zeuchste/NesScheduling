@@ -106,7 +106,7 @@ MemoryBudgets resolveMemoryBudgets(size_t totalMemoryInBytes, const uint32_t buf
         totalMemoryInBytes,
         unpooledFraction,
         bufferSize);
-    return {numberOfBuffers, unpooledLimitInBytes};
+    return MemoryBudgets{.numberOfBuffers = numberOfBuffers, .unpooledLimitInBytes = unpooledLimitInBytes};
 }
 }
 
