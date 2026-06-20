@@ -14,11 +14,13 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <thread>
 #include <unordered_map>
 #include <utility>
@@ -40,8 +42,20 @@ class UnpooledChunksManager
     static constexpr auto NUM_PRE_ALLOCATED_CHUNKS = 10;
     static constexpr auto ROLLING_AVERAGE_UNPOOLED_BUFFER_SIZE = 100;
 
-    /// Needed for allocating and deallocating memory
-    std::shared_ptr<std::pmr::memory_resource> memoryResource;
+    /// Needed for allocating and deallocating memory. Held by reference: the owning BufferManager (kept alive by the
+    /// TupleBuffer's recycler) owns both this manager and the memory_resource, so the resource always outlives us.
+    std::pmr::memory_resource& memoryResource;
+
+    /// Hard cap on the total bytes that may be allocated for unpooled chunks. Once exceeded, getUnpooledBuffer
+    /// returns std::nullopt instead of allocating, so the requesting query fails cleanly (via the callers'
+    /// BufferAllocationFailure paths) rather than the worker running out of physical memory.
+    /// std::numeric_limits<size_t>::max() means "unbounded" (the historic behaviour, e.g. for tests).
+    size_t unpooledMemoryBudgetInBytes;
+
+    /// Total bytes currently allocated across all unpooled chunks. The per-segment recycle callback decrements this
+    /// by reference: the owning TupleBuffer keeps its BufferRecycler (the BufferManager) alive, which in turn owns this
+    /// manager, so the manager always outlives any outstanding buffer whose recycle callback could run.
+    std::atomic<size_t> currentlyAllocatedUnpooledBytes{0};
 
     /// Helper struct that stores necessary information for accessing unpooled chunks
     /// Instead of allocating the exact needed space, we allocate a chunk of a space calculated by a rolling average of the last n sizes.
@@ -85,9 +99,17 @@ class UnpooledChunksManager
     std::shared_ptr<folly::Synchronized<UnpooledChunk>> getChunk(std::thread::id threadId);
 
 public:
-    explicit UnpooledChunksManager(std::shared_ptr<std::pmr::memory_resource> memoryResource);
+    explicit UnpooledChunksManager(std::pmr::memory_resource& memoryResource, size_t unpooledMemoryBudgetInBytes);
     size_t getNumberOfUnpooledBuffers() const;
-    TupleBuffer getUnpooledBuffer(size_t neededSize, size_t alignment, const std::shared_ptr<BufferRecycler>& bufferRecycler);
+
+    /// Total bytes currently allocated for unpooled chunks, and the configured budget. Exposed for diagnostics/tests.
+    size_t getCurrentlyAllocatedUnpooledBytes() const { return currentlyAllocatedUnpooledBytes.load(std::memory_order_relaxed); }
+
+    size_t getUnpooledMemoryBudgetInBytes() const { return unpooledMemoryBudgetInBytes; }
+
+    /// Returns std::nullopt if the unpooled memory budget would be exceeded or the underlying allocation fails.
+    std::optional<TupleBuffer>
+    getUnpooledBuffer(size_t neededSize, size_t alignment, const std::shared_ptr<BufferRecycler>& bufferRecycler);
 };
 
 }

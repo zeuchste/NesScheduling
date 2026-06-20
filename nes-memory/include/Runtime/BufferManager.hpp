@@ -103,6 +103,7 @@ class BufferManager final : public std::enable_shared_from_this<BufferManager>, 
 public:
     static constexpr auto DEFAULT_BUFFER_SIZE = 8 * 1024;
     static constexpr auto DEFAULT_NUMBER_OF_BUFFERS = 1024;
+
     static constexpr auto DEFAULT_ALIGNMENT = 64;
 
     explicit BufferManager(
@@ -111,7 +112,8 @@ public:
         uint32_t numOfBuffers,
         std::shared_ptr<std::pmr::memory_resource> memoryResource,
         uint32_t withAlignment,
-        std::optional<SizeClassConfig> sizeClasses);
+        std::optional<SizeClassConfig> sizeClasses,
+        size_t unpooledMemoryLimitInBytes);
 
     /// Creates a new global buffer manager
     /// @param bufferSize the size of each default-class buffer in bytes
@@ -119,12 +121,18 @@ public:
     /// @param withAlignment the alignment of each buffer, default is 64 so ony cache line aligned buffers, This value must be a pow of two and smaller than page size
     /// @param memoryResource resource for allocating and deallocating memory
     /// @param sizeClasses optional configuration enabling additional power-of-two size classes for variable-sized pooled buffers
+    /// @param unpooledMemoryLimitInBytes hard cap on total unpooled (variable-sized) buffer memory. 0 means unbounded.
+    ///        On breach, getUnpooledBuffer returns nullopt. The worker derives a concrete cap in NodeEngineBuilder.
+    /// NOLINTBEGIN(fuchsia-default-arguments-declarations): create() is a widely-used test/factory convenience; a
+    /// non-defaulted parameter cannot follow the defaulted memoryResource, so the trailing defaults are kept intentionally.
     static std::shared_ptr<BufferManager> create(
         uint32_t bufferSize = DEFAULT_BUFFER_SIZE,
         uint32_t numOfBuffers = DEFAULT_NUMBER_OF_BUFFERS,
         const std::shared_ptr<std::pmr::memory_resource>& memoryResource = std::make_shared<NesDefaultMemoryAllocator>(),
         uint32_t withAlignment = DEFAULT_ALIGNMENT,
-        std::optional<SizeClassConfig> sizeClasses = std::nullopt);
+        std::optional<SizeClassConfig> sizeClasses = std::nullopt,
+        size_t unpooledMemoryLimitInBytes = 0);
+    /// NOLINTEND(fuchsia-default-arguments-declarations)
 
     BufferManager(const BufferManager&) = delete;
     BufferManager& operator=(const BufferManager&) = delete;

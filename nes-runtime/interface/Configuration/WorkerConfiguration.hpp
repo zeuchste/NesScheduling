@@ -21,6 +21,7 @@
 #include <Configurations/BaseOption.hpp>
 #include <Configurations/Enums/EnumOption.hpp>
 #include <Configurations/ScalarOption.hpp>
+#include <Configurations/Validation/FloatValidation.hpp>
 #include <Configurations/Validation/NumberValidation.hpp>
 #include <Configurations/Validation/PowerOfTwoValidation.hpp>
 #include <Runtime/BufferManager.hpp>
@@ -44,11 +45,35 @@ public:
     QueryOptimizerConfiguration defaultQueryOptimization = {"default_query_optimization", "Default configuration for query optimizations"};
     WorkerNetworkConfiguration network = {"network", "Default configuration for network sources and sinks"};
 
-    /// The number of buffers in the global buffer manager. Controls how much memory is consumed by the system.
+    /// Total buffer memory budget for this worker, in bytes. The pooled pool and the unpooled budget are both derived
+    /// from this single ceiling (see unpooledMemoryFraction), so they cannot independently exceed it. Set this to your
+    /// buffer budget, i.e. the container limit minus headroom for runtime/network/stacks, not the raw cgroup limit.
+    /// Set to 0 to auto-detect (the cgroup memory limit if running in a container, else physical RAM); note that
+    /// auto-detect is unsafe when many workers share one host/container (e.g. the parallel test suite), as each would
+    /// size its pools against the full machine and collectively overcommit. The fixed default reproduces the legacy
+    /// 32768-buffer pooled pool: 32768 * DEFAULT_OPERATOR_BUFFER_SIZE / (1 - unpooledMemoryFraction) = 447392427.
+    UIntOption totalMemoryInBytes
+        = {"total_memory_in_bytes",
+           "447392427",
+           "Total worker buffer memory in bytes (0 = auto-detect: cgroup limit if containerized, else physical RAM).",
+           {std::make_shared<NumberValidation>()}};
+
+    /// Share of totalMemoryInBytes reserved for unpooled (variable-sized) operator state (hash maps, paged vectors,
+    /// var-sized data); the remainder sizes the pooled pool. Must be in (0, 1). On breach of the unpooled share, the
+    /// requesting query fails cleanly (BufferAllocationFailure) instead of the worker OOM-ing.
+    FloatOption unpooledMemoryFraction
+        = {"unpooled_memory_fraction",
+           "0.7",
+           "Fraction of total_memory_in_bytes reserved for unpooled operator state; the rest sizes the pooled pool (0..1).",
+           {std::make_shared<FloatValidation>()}};
+
+    /// Explicit pooled buffer count. 0 (default) = derive from total_memory_in_bytes / unpooled_memory_fraction (see
+    /// resolveMemoryBudgets in NodeEngineBuilder); any value > 0 overrides the budget-derived count. Lets stress configs
+    /// (e.g. a tiny pool for buffer-exhaustion tests) pin an exact number of pooled buffers.
     UIntOption numberOfBuffersInGlobalBufferManager
         = {"number_of_buffers_in_global_buffer_manager",
-           "32768",
-           "Number buffers in global buffer pool.",
+           "0",
+           "Explicit pooled buffer count (0 = derive from total_memory_in_bytes).",
            {std::make_shared<NumberValidation>()}};
 
     /// Indicates how many buffers a single data source can allocate. This property controls the backpressure mechanism as a data source that can't allocate new records can't ingest more data.
@@ -111,6 +136,8 @@ private:
             &defaultQueryExecution,
             &defaultQueryOptimization,
             &network,
+            &totalMemoryInBytes,
+            &unpooledMemoryFraction,
             &numberOfBuffersInGlobalBufferManager,
             &defaultMaxInflightBuffers,
             &dumpQueryCompilationIR,

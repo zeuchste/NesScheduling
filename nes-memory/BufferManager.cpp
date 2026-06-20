@@ -18,6 +18,10 @@
 #include <bit>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <deque>
+#include <limits>
 #include <map>
 #include <memory>
 #include <memory_resource>
@@ -42,8 +46,13 @@ BufferManager::BufferManager(
     const uint32_t numOfBuffers,
     std::shared_ptr<std::pmr::memory_resource> memoryResource,
     const uint32_t withAlignment,
-    std::optional<SizeClassConfig> sizeClasses)
-    : unpooledChunksManager(std::make_shared<UnpooledChunksManager>(memoryResource))
+    std::optional<SizeClassConfig> sizeClasses,
+    const size_t unpooledMemoryLimitInBytes)
+    /// 0 means "unbounded" at this layer; the worker derives a concrete budget in NodeEngineBuilder and passes it here.
+    /// The UnpooledChunksManager holds the memory_resource by reference; this BufferManager owns the shared_ptr (member
+    /// `memoryResource` below) and outlives the manager, so the reference stays valid for the manager's whole lifetime.
+    : unpooledChunksManager(std::make_shared<UnpooledChunksManager>(
+          *memoryResource, unpooledMemoryLimitInBytes == 0 ? std::numeric_limits<size_t>::max() : unpooledMemoryLimitInBytes))
     , bufferSize(bufferSize)
     , numOfBuffers(numOfBuffers)
     , memoryResource(std::move(memoryResource))
@@ -57,9 +66,11 @@ std::shared_ptr<BufferManager> BufferManager::create(
     uint32_t numOfBuffers,
     const std::shared_ptr<std::pmr::memory_resource>& memoryResource,
     uint32_t withAlignment,
-    std::optional<SizeClassConfig> sizeClasses)
+    std::optional<SizeClassConfig> sizeClasses,
+    size_t unpooledMemoryLimitInBytes)
 {
-    return std::make_shared<BufferManager>(Private{}, bufferSize, numOfBuffers, memoryResource, withAlignment, std::move(sizeClasses));
+    return std::make_shared<BufferManager>(
+        Private{}, bufferSize, numOfBuffers, memoryResource, withAlignment, std::move(sizeClasses), unpooledMemoryLimitInBytes);
 }
 
 BufferManager::~BufferManager()
