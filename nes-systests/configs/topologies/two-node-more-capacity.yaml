@@ -12,7 +12,10 @@ workers:
     config:
       worker:
         total_memory_in_bytes: 16384000000
-        unpooled_memory_fraction: 0.5
+        # Pooled is pre-allocated; the unpooled budget is allocated on demand up to this cap. Large-scale Nexmark
+        # builds multi-GB hash-map state, so reserve most of the budget for the (on-demand) unpooled pool and keep a
+        # modest pre-allocated pooled pool (~200k buffers), mirroring main's "fixed pool + effectively unbounded state".
+        unpooled_memory_fraction: 0.95
         query_engine:
           number_of_worker_threads: 8
 
@@ -24,7 +27,10 @@ workers:
     config:
       worker:
         total_memory_in_bytes: 16384000000
-        unpooled_memory_fraction: 0.5
+        # Pooled is pre-allocated; the unpooled budget is allocated on demand up to this cap. Large-scale Nexmark
+        # builds multi-GB hash-map state, so reserve most of the budget for the (on-demand) unpooled pool and keep a
+        # modest pre-allocated pooled pool (~200k buffers), mirroring main's "fixed pool + effectively unbounded state".
+        unpooled_memory_fraction: 0.95
         query_engine:
           number_of_worker_threads: 4
 
