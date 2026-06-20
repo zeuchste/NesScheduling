@@ -83,6 +83,7 @@ EXCEPTION(CannotFormatMalformedStringValue, 3002, "cannot format malformed strin
 EXCEPTION(SkippingDelayedTaskDuringShutdown, 3004, "skipping delayed task during shutdown")
 EXCEPTION(TuplesTooLargeForPipelineBufferSize, 3005, "tuples too large for pipeline buffer size")
 EXCEPTION(InferenceRuntimeFailure, 3006, "inference runtime failure")
+EXCEPTION(QueryBufferExhausted, 3007, "query terminated to relieve buffer-pool exhaustion")
 EXCEPTION(ArithmeticalError, 3013, "arithmetical error")
 EXCEPTION(WindowingError, 3014, "windowing error")
 

@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <limits>
 #include <optional>
 #include <vector>
 #include <Runtime/TupleBuffer.hpp>
@@ -61,6 +62,10 @@ public:
 
     /// Non-blocking variant of getBuffer(size). Returns an invalid optional if no buffer is currently available.
     virtual std::optional<TupleBuffer> getBufferNoBlocking(size_t size) = 0;
+
+    /// Number of currently-available pooled buffers. Providers without a bounded pool report "unbounded" (max), so the
+    /// buffer-exhaustion arbiter never considers them exhausted. The global BufferManager overrides this.
+    [[nodiscard]] virtual size_t getNumberOfAvailableBuffers() const { return std::numeric_limits<size_t>::max(); }
 };
 
 }
