@@ -165,7 +165,7 @@ void* ArenaMemoryResource::do_allocate(size_t bytes, [[maybe_unused]] size_t ali
     if (ptr == MAP_FAILED)
     {
         /// NOLINTNEXTLINE(concurrency-mt-unsafe): strerror used only on the fatal error path under the arena mutex
-        throw CannotAllocateBuffer("ArenaMemoryResource: mmap of {} bytes failed: {}", mapLen, std::strerror(errno));
+        throw BufferAllocationFailure("ArenaMemoryResource: mmap of {} bytes failed: {}", mapLen, std::strerror(errno));
     }
     regions.push_back(Region{.ptr = ptr, .mapLen = mapLen, .spillOffset = fileCursor, .live = true});
     fileCursor += mapLen;

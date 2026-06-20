@@ -70,7 +70,7 @@ void runAllocations(
     /// These stress tests deliberately allocate tens of GiB of (mostly untouched) unpooled memory to exercise chunk
     /// management, so we opt out of the unpooled budget here (the budget itself is covered by a dedicated test below).
     const auto bufferManager = BufferManager::create(
-        1, 1, std::make_shared<NesDefaultMemoryAllocator>(), BufferManager::DEFAULT_ALIGNMENT, std::numeric_limits<size_t>::max());
+        1, 1, std::make_shared<NesDefaultMemoryAllocator>(), BufferManager::DEFAULT_ALIGNMENT, std::nullopt, std::numeric_limits<size_t>::max());
 
     /// Creating random allocation sizes
     auto randomAllocations = createRandomSizeAllocations(numberOfRandomAllocationSizes, minAllocationSize, maxAllocationSize);
@@ -157,7 +157,7 @@ TEST(UnpooledBufferTests, UnpooledMemoryBudgetIsEnforcedAndReleased)
     /// Tiny explicit unpooled budget. The pooled pool (1 buffer of 1 B) is irrelevant; we only exercise getUnpooledBuffer.
     constexpr size_t unpooledBudgetInBytes = size_t{4} * 1024 * 1024; /// 4 MiB
     const auto bufferManager = BufferManager::create(
-        1, 1, std::make_shared<NesDefaultMemoryAllocator>(), BufferManager::DEFAULT_ALIGNMENT, unpooledBudgetInBytes);
+        1, 1, std::make_shared<NesDefaultMemoryAllocator>(), BufferManager::DEFAULT_ALIGNMENT, std::nullopt, unpooledBudgetInBytes);
 
     constexpr size_t allocationSize = size_t{64} * 1024; /// 64 KiB
     constexpr size_t maxAllocations = size_t{100} * 1000; /// generous upper bound; we expect rejection well before this
