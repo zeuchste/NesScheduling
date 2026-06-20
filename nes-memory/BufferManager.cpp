@@ -92,6 +92,10 @@ void BufferManager::destroy()
             totalBuffers += pool->numTotal();
             availableBuffers += pool->numAvailable();
         }
+        NES_INFO(
+            "[BufferManager] peak pooled buffers used: {} of {} total",
+            peakUsedPooledBuffers.load(std::memory_order_relaxed),
+            totalBuffers);
         if (totalBuffers != availableBuffers)
         {
             NES_ERROR("[BufferManager] total buffers {} :: available buffers {}", totalBuffers, availableBuffers);
@@ -278,6 +282,7 @@ TupleBuffer BufferManager::wrapSegment(detail::MemorySegment* segment)
 {
     if (segment->controlBlock->prepare(shared_from_this()))
     {
+        updatePeakUsed(usedPooledBuffers.fetch_add(1, std::memory_order_relaxed) + 1);
         return TupleBuffer(segment->controlBlock.get(), segment->ptr, segment->size);
     }
     throw InvalidRefCountForBuffer("[BufferManager] got buffer with invalid reference counter");
@@ -369,6 +374,7 @@ std::optional<TupleBuffer> BufferManager::getUnpooledBuffer(const size_t bufferS
 
 void BufferManager::recyclePooledBuffer(detail::MemorySegment* segment)
 {
+    usedPooledBuffers.fetch_sub(1, std::memory_order_relaxed);
     INVARIANT(segment->isAvailable(), "Recycling buffer callback invoked on used memory segment");
     INVARIANT(
         segment->controlBlock->owningBufferRecycler == nullptr, "Buffer should not retain a reference to its parent while not in use");
@@ -387,6 +393,19 @@ void BufferManager::recyclePooledBuffer(detail::MemorySegment* segment)
 void BufferManager::recycleUnpooledBuffer(detail::MemorySegment*, const AllocationThreadInfo&)
 {
     INVARIANT(false, "This method should not be called!");
+}
+
+void BufferManager::updatePeakUsed(size_t current) noexcept
+{
+    auto previous = peakUsedPooledBuffers.load(std::memory_order_relaxed);
+    while (current > previous && !peakUsedPooledBuffers.compare_exchange_weak(previous, current, std::memory_order_relaxed))
+    {
+    }
+}
+
+size_t BufferManager::getPeakUsedPooledBuffers() const noexcept
+{
+    return peakUsedPooledBuffers.load(std::memory_order_relaxed);
 }
 
 size_t BufferManager::getBufferSize() const

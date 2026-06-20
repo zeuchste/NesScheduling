@@ -183,6 +183,9 @@ public:
     size_t getNumOfUnpooledBuffers() const override;
     size_t getNumberOfAvailableBuffers() const override;
 
+    /// Peak number of pooled buffers simultaneously in use over this manager's lifetime (instrumentation).
+    [[nodiscard]] size_t getPeakUsedPooledBuffers() const noexcept;
+
     /// Explicitly shuts down the buffer manager: checks for leaked buffers (fires INVARIANT on leaks),
     /// deallocates all memory, and marks the manager as destroyed. The destructor calls this automatically
     /// if it has not already been called.
@@ -214,6 +217,12 @@ private:
 
     std::shared_ptr<std::pmr::memory_resource> memoryResource;
     std::atomic<bool> isDestroyed{false};
+
+    /// Instrumentation: live count and high-water-mark of pooled buffers in use (relaxed; updated on the
+    /// allocation hot path in wrapSegment and the recycle path in recyclePooledBuffer).
+    std::atomic<size_t> usedPooledBuffers{0};
+    std::atomic<size_t> peakUsedPooledBuffers{0};
+    void updatePeakUsed(size_t current) noexcept;
 };
 
 
