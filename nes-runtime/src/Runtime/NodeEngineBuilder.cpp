@@ -30,6 +30,7 @@
 #include <Listeners/QueryLog.hpp>
 #include <Runtime/BufferManager.hpp>
 #include <Runtime/NodeEngine.hpp>
+#include <Runtime/Spill/SpillManager.hpp>
 #include <Sources/SourceProvider.hpp>
 #include <ErrorHandling.hpp>
 #include <QueryEngine.hpp>
@@ -153,7 +154,14 @@ std::unique_ptr<NodeEngine> NodeEngineBuilder::build(const Host& host)
         unpooledLimitInBytes);
     auto queryLog = std::make_shared<QueryLog>();
 
-    auto queryEngine = std::make_unique<QueryEngine>(workerConfiguration.queryEngine, statisticsListener, queryLog, bufferManager, host);
+    SpillConfiguration spillConfiguration;
+    spillConfiguration.enabled = workerConfiguration.enableStateSpilling.getValue();
+    spillConfiguration.stateMemoryBudgetBytes = workerConfiguration.stateMemoryBudgetInBytes.getValue();
+    spillConfiguration.spillDirectory = workerConfiguration.spillDirectory.getValue();
+    auto spillManager = std::make_shared<SpillManager>(spillConfiguration);
+
+    auto queryEngine
+        = std::make_unique<QueryEngine>(workerConfiguration.queryEngine, statisticsListener, queryLog, bufferManager, spillManager, host);
 
     auto sourceProvider = std::make_unique<SourceProvider>(workerConfiguration.defaultMaxInflightBuffers.getValue(), bufferManager);
 

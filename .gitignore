@@ -63,3 +63,6 @@ scripts/__pycache__
 .codex/
 [Cc][Ll][Aa][Uu][Dd][Ee].md
 /build-bench*
+
+# build directories
+/build*
