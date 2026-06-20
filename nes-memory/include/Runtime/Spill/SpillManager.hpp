@@ -106,6 +106,20 @@ public:
 
     [[nodiscard]] const SpillConfiguration& configuration() const noexcept { return config; }
 
+    /// Cumulative spill activity for evaluation/instrumentation. Counters are monotonic over the manager's lifetime.
+    struct Stats
+    {
+        size_t evictions;
+        size_t reloads;
+        size_t bytesEvicted;
+        size_t bytesReloaded;
+        size_t peakResidentBytes;
+    };
+    [[nodiscard]] Stats stats() const noexcept;
+
+    /// Logs the accumulated spill stats once, on shutdown, when spilling was enabled.
+    ~SpillManager();
+
 private:
     /// Per-unit bookkeeping. Stored behind a shared_ptr so its address (and mutex) stay stable across registry rehash.
     /// The state is held by weak_ptr: the SliceStore owns the slice's lifetime, so the governor must not keep it alive.
@@ -123,6 +137,15 @@ private:
     SpillConfiguration config;
     mutable std::shared_mutex registryMutex;
     std::map<const SpillableState*, std::shared_ptr<Entry>> registry;
+
+    /// Instrumentation counters (monotonic). Updated on the evict path (evictDownTo) and reload path (pin).
+    std::atomic<size_t> evictionCount{0};
+    std::atomic<size_t> reloadCount{0};
+    std::atomic<size_t> bytesEvictedTotal{0};
+    std::atomic<size_t> bytesReloadedTotal{0};
+    std::atomic<size_t> peakResidentBytes{0};
+    /// Raise peakResidentBytes to current if it is larger (lock-free max).
+    void updatePeak(size_t current) noexcept;
 };
 
 }

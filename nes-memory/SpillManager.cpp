@@ -25,6 +25,7 @@
 #include <vector>
 
 #include <ErrorHandling.hpp>
+#include <Util/Logger/Logger.hpp>
 
 namespace NES
 {
@@ -78,6 +79,8 @@ void SpillManager::pin(SpillableState& state)
     if (state.isEvicted())
     {
         state.reloadState();
+        reloadCount.fetch_add(1);
+        bytesReloadedTotal.fetch_add(state.residentBytes());
     }
 }
 
@@ -119,7 +122,9 @@ size_t SpillManager::maybeSpill()
         return 0;
     }
     const auto highBytes = static_cast<size_t>(static_cast<double>(config.stateMemoryBudgetBytes) * config.highWatermark);
-    if (residentBytes() <= highBytes)
+    const auto current = residentBytes();
+    updatePeak(current);
+    if (current <= highBytes)
     {
         return 0;
     }
@@ -153,6 +158,7 @@ size_t SpillManager::evictDownTo(size_t targetBytes)
             }
         }
     }
+    updatePeak(resident);
     if (resident <= targetBytes)
     {
         return 0;
@@ -181,8 +187,44 @@ size_t SpillManager::evictDownTo(size_t targetBytes)
         const auto bytes = candidate.state->residentBytes();
         candidate.state->evictState();
         freed += bytes;
+        evictionCount.fetch_add(1);
+        bytesEvictedTotal.fetch_add(bytes);
     }
     return freed;
+}
+
+void SpillManager::updatePeak(size_t current) noexcept
+{
+    auto previous = peakResidentBytes.load(std::memory_order_relaxed);
+    while (current > previous && !peakResidentBytes.compare_exchange_weak(previous, current, std::memory_order_relaxed))
+    {
+    }
+}
+
+SpillManager::Stats SpillManager::stats() const noexcept
+{
+    return Stats{
+        .evictions = evictionCount.load(),
+        .reloads = reloadCount.load(),
+        .bytesEvicted = bytesEvictedTotal.load(),
+        .bytesReloaded = bytesReloadedTotal.load(),
+        .peakResidentBytes = peakResidentBytes.load()};
+}
+
+SpillManager::~SpillManager()
+{
+    if (config.enabled)
+    {
+        const auto currentStats = stats();
+        NES_INFO(
+            "SpillManager stats: evictions={} reloads={} bytesEvicted={} bytesReloaded={} peakResidentBytes={} budgetBytes={}",
+            currentStats.evictions,
+            currentStats.reloads,
+            currentStats.bytesEvicted,
+            currentStats.bytesReloaded,
+            currentStats.peakResidentBytes,
+            config.stateMemoryBudgetBytes);
+    }
 }
 
 }
