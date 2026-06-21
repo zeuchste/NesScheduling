@@ -1,0 +1,7 @@
+# E3 baseline: EagerFull emit (full operator-buffer-size output buffer) WITH size classes enabled, so the only
+# difference vs emit-inputsized-sizeclasses.yaml is the emit allocation strategy (apples-to-apples).
+default_query_execution:
+  emit_buffer_allocation_mode: EagerFull
+enable_buffer_size_classes: true
+buffer_size_class_min_bytes: 256
+buffer_size_class_max_bytes: 1048576
