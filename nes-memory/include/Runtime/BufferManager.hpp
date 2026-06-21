@@ -182,6 +182,7 @@ public:
     size_t getNumOfPooledBuffers() const override;
     size_t getNumOfUnpooledBuffers() const override;
     size_t getNumberOfAvailableBuffers() const override;
+    bool servesSizeClasses() const override;
 
     /// Peak number of pooled buffers simultaneously in use over this manager's lifetime (instrumentation).
     [[nodiscard]] size_t getPeakUsedPooledBuffers() const noexcept;

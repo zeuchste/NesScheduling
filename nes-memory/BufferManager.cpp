@@ -418,6 +418,12 @@ size_t BufferManager::getPeakUsedPooledBuffers() const noexcept
     return peakUsedPooledBuffers.load(std::memory_order_relaxed);
 }
 
+bool BufferManager::servesSizeClasses() const
+{
+    /// More than the single default class means power-of-two size classes were configured.
+    return pools.size() > 1;
+}
+
 size_t BufferManager::getBufferSize() const
 {
     return bufferSize;
