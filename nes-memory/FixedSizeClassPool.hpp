@@ -15,6 +15,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cstdint>
@@ -70,6 +71,9 @@ public:
 
     [[nodiscard]] uint32_t getBufferSize() const noexcept { return bufferSize; }
 
+    /// #1711 instrumentation: cumulative successful pops (buffers served) from this size class over its lifetime.
+    [[nodiscard]] size_t numAllocations() const noexcept { return allocationCount.load(std::memory_order_relaxed); }
+
     /// Preallocate `count` buffers (clamped to the remaining queue capacity) as a single region.
     void addRegion(const size_t count)
     {
@@ -84,6 +88,7 @@ public:
         MemorySegment* segment = nullptr;
         if (availableBuffers.read(segment))
         {
+            allocationCount.fetch_add(1, std::memory_order_relaxed);
             return segment;
         }
         if (elastic)
@@ -96,6 +101,7 @@ public:
             }
             if (availableBuffers.read(segment))
             {
+                allocationCount.fetch_add(1, std::memory_order_relaxed);
                 return segment;
             }
         }
@@ -117,6 +123,7 @@ public:
         MemorySegment* segment = nullptr;
         if (availableBuffers.tryReadUntil(deadline, segment))
         {
+            allocationCount.fetch_add(1, std::memory_order_relaxed);
             return segment;
         }
         return nullptr;
@@ -212,6 +219,7 @@ private:
     std::deque<MemorySegment> allBuffers;
     std::vector<std::pair<uint8_t*, size_t>> regions;
     mutable std::mutex mutex;
+    std::atomic<size_t> allocationCount{0};
 };
 
 }

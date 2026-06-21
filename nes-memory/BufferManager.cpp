@@ -96,6 +96,16 @@ void BufferManager::destroy()
             "[BufferManager] peak pooled buffers used: {} of {} total",
             peakUsedPooledBuffers.load(std::memory_order_relaxed),
             totalBuffers);
+        /// #1711: per-size-class allocation breakdown, so emit-mode benchmarks can see which classes served buffers
+        /// (e.g. InputSized pulling from small classes vs EagerFull using only the default class).
+        for (const auto& pool : pools)
+        {
+            NES_INFO(
+                "[BufferManager] size class {}B: {} allocations over lifetime, {} buffers in class",
+                pool->getBufferSize(),
+                pool->numAllocations(),
+                pool->numTotal());
+        }
         if (totalBuffers != availableBuffers)
         {
             NES_ERROR("[BufferManager] total buffers {} :: available buffers {}", totalBuffers, availableBuffers);
