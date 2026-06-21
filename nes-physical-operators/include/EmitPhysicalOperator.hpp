@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <Util/EmitBufferAllocationMode.hpp>
 #include <Interface/BufferRef/TupleBufferRef.hpp>
 #include <Interface/Record.hpp>
 #include <Interface/RecordBuffer.hpp>
@@ -34,7 +35,10 @@ namespace NES
 class EmitPhysicalOperator final : public PhysicalOperatorConcept
 {
 public:
-    explicit EmitPhysicalOperator(OperatorHandlerId operatorHandlerId, std::shared_ptr<TupleBufferRef> bufferRef);
+    explicit EmitPhysicalOperator(
+        OperatorHandlerId operatorHandlerId,
+        std::shared_ptr<TupleBufferRef> bufferRef,
+        EmitBufferAllocationMode mode = EmitBufferAllocationMode::EagerFull);
 
     void setup(ExecutionContext&, CompilationContext&) const override { /*noop*/ }
 
@@ -58,6 +62,8 @@ private:
     std::optional<PhysicalOperator> child;
     std::shared_ptr<TupleBufferRef> bufferRef;
     OperatorHandlerId operatorHandlerId;
+    /// #1711: output-buffer allocation strategy, fixed at query-compile time and specialised into the generated code.
+    EmitBufferAllocationMode mode;
 };
 
 }

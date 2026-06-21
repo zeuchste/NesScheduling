@@ -24,6 +24,7 @@
 #include <Configurations/ScalarOption.hpp>
 #include <Configurations/Validation/FloatValidation.hpp>
 #include <Configurations/Validation/NumberValidation.hpp>
+#include <Util/EmitBufferAllocationMode.hpp>
 #include <Util/ExecutionMode.hpp>
 #include <SliceCacheConfiguration.hpp>
 
@@ -73,6 +74,13 @@ public:
            "Buffer size of a operator e.g. during scan",
            {std::make_shared<NumberValidation>()}};
 
+    /// #1711: strategy the Emit operator uses to allocate its output buffer (benchmarkable). Default EagerFull
+    /// reproduces the legacy behaviour (full buffer up front, emitted even if empty).
+    EnumOption<EmitBufferAllocationMode> emitBufferAllocationMode
+        = {"emit_buffer_allocation_mode",
+           EmitBufferAllocationMode::EagerFull,
+           "Emit output-buffer allocation strategy [EagerFull|InputSized|StageAndCopy|ReuseAcrossRuns]."};
+
     SliceCacheConfiguration sliceCacheConfiguration = {"slice_cache", "Configuration for the slice cache"};
 
 private:
@@ -85,6 +93,7 @@ private:
             &numberOfRecordsPerKey,
             &maxNumberOfBuckets,
             &operatorBufferSize,
+            &emitBufferAllocationMode,
             &sliceCacheConfiguration};
     }
 };

@@ -54,6 +54,14 @@ public:
     virtual void repeatTask(const TupleBuffer&, std::chrono::milliseconds) = 0;
 
     virtual TupleBuffer allocateTupleBuffer() = 0;
+    /// Right-sized allocation: a buffer of at least sizeInBytes, served from the smallest fitting size class when size
+    /// classes are enabled (#1711). The default ignores the hint and returns a default-size buffer, so implementers
+    /// that do not right-size need no change.
+    virtual TupleBuffer allocateTupleBuffer(size_t sizeInBytes)
+    {
+        (void)sizeInBytes;
+        return allocateTupleBuffer();
+    }
     /// Pins a buffer, meaning the returned reference should be valid throughout the lifetime of the pipeline execution context
     virtual TupleBuffer& pinBuffer(TupleBuffer&& tupleBuffer) = 0;
     [[nodiscard]] virtual WorkerThreadId getWorkerThreadId() const = 0;

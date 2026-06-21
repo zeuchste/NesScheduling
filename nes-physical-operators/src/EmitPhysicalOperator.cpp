@@ -41,20 +41,44 @@ namespace NES
 class EmitState : public OperatorState
 {
 public:
-    explicit EmitState(const RecordBuffer& resultBuffer) : resultBuffer(resultBuffer), bufferMemoryArea(resultBuffer.getMemArea()) { }
+    EmitState(const RecordBuffer& resultBuffer, const nautilus::val<uint64_t>& targetBytes)
+        : resultBuffer(resultBuffer), bufferMemoryArea(resultBuffer.getMemArea()), targetBytes(targetBytes)
+    {
+    }
 
     nautilus::val<uint64_t> outputIndex = 0;
     RecordBuffer resultBuffer;
     nautilus::val<int8_t*> bufferMemoryArea;
+    /// #1711: byte size used when (re)allocating this pipeline's output buffer, derived from the input cardinality.
+    nautilus::val<uint64_t> targetBytes;
 };
 
-void EmitPhysicalOperator::open(ExecutionContext& ctx, RecordBuffer&) const
+void EmitPhysicalOperator::open(ExecutionContext& ctx, RecordBuffer& inputRecordBuffer) const
 {
-    /// initialize state variable and create new buffer
-    const auto resultBufferRef = ctx.allocateBuffer();
-    const auto resultBuffer = RecordBuffer(resultBufferRef);
-    auto emitState = std::make_unique<EmitState>(resultBuffer);
-    ctx.setLocalOperatorState(id, std::move(emitState));
+    /// #1711: the allocation strategy is fixed per operator (compile-time), so exactly one branch is specialised into
+    /// the generated code. InputSized/StageAndCopy size the output buffer DOWN to the input cardinality (an upper bound
+    /// for map/filter/projection), capped at the operator buffer size; with size classes enabled getBuffer() serves the
+    /// smallest fitting class, with them off it returns the default-size buffer. EagerFull/ReuseAcrossRuns keep the
+    /// original full-size allocation. Under-estimates are handled by the flush-on-full path in execute().
+    /// TODO(#1711): StageAndCopy = copy to an exact buffer at flush; ReuseAcrossRuns = carry a partial buffer across runs.
+    if (mode == EmitBufferAllocationMode::InputSized || mode == EmitBufferAllocationMode::StageAndCopy)
+    {
+        nautilus::val<uint64_t> targetBytes = bufferRef->getBufferSize();
+        const auto wanted = inputRecordBuffer.getNumRecords() * bufferRef->getTupleSize();
+        if (wanted < targetBytes)
+        {
+            targetBytes = wanted;
+        }
+        const auto resultBufferRef = ctx.allocateBuffer(targetBytes);
+        auto emitState = std::make_unique<EmitState>(RecordBuffer(resultBufferRef), targetBytes);
+        ctx.setLocalOperatorState(id, std::move(emitState));
+    }
+    else
+    {
+        const auto resultBufferRef = ctx.allocateBuffer();
+        auto emitState = std::make_unique<EmitState>(RecordBuffer(resultBufferRef), bufferRef->getBufferSize());
+        ctx.setLocalOperatorState(id, std::move(emitState));
+    }
 }
 
 void EmitPhysicalOperator::execute(ExecutionContext& ctx, Record& record) const
@@ -71,7 +95,8 @@ void EmitPhysicalOperator::execute(ExecutionContext& ctx, Record& record) const
     if (!writeResult.successful)
     {
         emitRecordBuffer(ctx, emitState->resultBuffer, emitState->outputIndex, false);
-        const auto resultBufferRef = ctx.allocateBuffer();
+        const auto sized = (mode == EmitBufferAllocationMode::InputSized || mode == EmitBufferAllocationMode::StageAndCopy);
+        const auto resultBufferRef = sized ? ctx.allocateBuffer(emitState->targetBytes) : ctx.allocateBuffer();
         emitState->resultBuffer = RecordBuffer(resultBufferRef);
         emitState->bufferMemoryArea = emitState->resultBuffer.getMemArea();
         emitState->outputIndex = 0_u64;
@@ -139,8 +164,9 @@ void EmitPhysicalOperator::emitRecordBuffer(
     ctx.emitBuffer(recordBuffer);
 }
 
-EmitPhysicalOperator::EmitPhysicalOperator(OperatorHandlerId operatorHandlerId, std::shared_ptr<TupleBufferRef> memoryProvider)
-    : bufferRef(std::move(memoryProvider)), operatorHandlerId(operatorHandlerId)
+EmitPhysicalOperator::EmitPhysicalOperator(
+    OperatorHandlerId operatorHandlerId, std::shared_ptr<TupleBufferRef> memoryProvider, EmitBufferAllocationMode mode)
+    : bufferRef(std::move(memoryProvider)), operatorHandlerId(operatorHandlerId), mode(mode)
 {
 }
 

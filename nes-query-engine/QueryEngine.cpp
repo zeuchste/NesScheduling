@@ -249,7 +249,7 @@ public:
 
     /// Acquire a buffer for currentQuery, terminating victim queries if the pool is exhausted. Throws
     /// QueryBufferExhausted if the caller's own query is selected as the victim.
-    TupleBuffer allocate(QueryId currentQuery)
+    TupleBuffer allocate(QueryId currentQuery, size_t sizeInBytes = 0)
     {
         /// Defensive backstop only: terminating queries frees buffers monotonically (bounded by the number of queries),
         /// so this loop makes progress without it; the deadline just guards against unforeseen wedges.
@@ -263,7 +263,8 @@ public:
             /// Prefer the normal pool, but leave `recoveryMargin` buffers free for the recovery/teardown path.
             if (bufferProvider->getNumberOfAvailableBuffers() > recoveryMargin)
             {
-                if (auto buffer = bufferProvider->getBufferNoBlocking())
+                if (auto buffer = (sizeInBytes == 0 ? bufferProvider->getBufferNoBlocking()
+                                                    : bufferProvider->getBufferNoBlocking(sizeInBytes)))
                 {
                     return std::move(buffer.value());
                 }
@@ -348,6 +349,12 @@ struct DefaultPEC final : PipelineExecutionContext
     {
         PRECONDITION(!wasRepeated, "A task should terminate after repeating");
         return arbiter->allocate(queryId);
+    }
+
+    TupleBuffer allocateTupleBuffer(size_t sizeInBytes) override
+    {
+        PRECONDITION(!wasRepeated, "A task should terminate after repeating");
+        return arbiter->allocate(queryId, sizeInBytes);
     }
 
     TupleBuffer& pinBuffer(TupleBuffer&& tupleBuffer) override

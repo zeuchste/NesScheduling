@@ -84,6 +84,20 @@ nautilus::val<TupleBuffer*> ExecutionContext::allocateBuffer() const
     return bufferPtr;
 }
 
+nautilus::val<TupleBuffer*> ExecutionContext::allocateBuffer(const nautilus::val<uint64_t>& sizeInBytes) const
+{
+    auto bufferPtr = nautilus::invoke(
+        +[](PipelineExecutionContext* pec, uint64_t requestedBytes)
+        {
+            PRECONDITION(pec, "pipeline execution context should not be null");
+            auto newTupleBuffer = pec->allocateTupleBuffer(requestedBytes);
+            return std::addressof(pec->pinBuffer(std::move(newTupleBuffer)));
+        },
+        pipelineContext,
+        sizeInBytes);
+    return bufferPtr;
+}
+
 nautilus::val<int8_t*> ExecutionContext::allocateMemory(const nautilus::val<size_t>& sizeInBytes)
 {
     return pipelineMemoryProvider.arena.allocateMemory(sizeInBytes);
