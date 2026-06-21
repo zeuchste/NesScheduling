@@ -27,6 +27,7 @@
 #include <Interface/RecordBuffer.hpp>
 #include <Runtime/AbstractBufferProvider.hpp>
 #include <Runtime/Execution/OperatorHandler.hpp>
+#include <Runtime/MemoryUtils.hpp>
 #include <Runtime/TupleBuffer.hpp>
 #include <Util/Logger/Logger.hpp>
 #include <Util/StdInt.hpp>
@@ -96,6 +97,23 @@ nautilus::val<TupleBuffer*> ExecutionContext::allocateBuffer(const nautilus::val
         pipelineContext,
         sizeInBytes);
     return bufferPtr;
+}
+
+nautilus::val<TupleBuffer*>
+ExecutionContext::copyToRightSizedBuffer(const nautilus::val<TupleBuffer*>& staging, const nautilus::val<uint64_t>& usedBytes) const
+{
+    return nautilus::invoke(
+        +[](PipelineExecutionContext* pec, TupleBuffer* stagingBuffer, uint64_t bytes)
+        {
+            PRECONDITION(pec, "pipeline execution context should not be null");
+            PRECONDITION(stagingBuffer, "staging buffer should not be null");
+            auto rightSized = pec->allocateTupleBuffer(bytes);
+            copyUsedRecordsInto(rightSized, *stagingBuffer, bytes, *pec->getBufferManager());
+            return std::addressof(pec->pinBuffer(std::move(rightSized)));
+        },
+        pipelineContext,
+        staging,
+        usedBytes);
 }
 
 nautilus::val<int8_t*> ExecutionContext::allocateMemory(const nautilus::val<size_t>& sizeInBytes)

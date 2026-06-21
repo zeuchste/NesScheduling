@@ -26,6 +26,11 @@ TupleBuffer deepCopyBuffer(const TupleBuffer& buffer, AbstractBufferProvider& pr
 /// Returns a buffer for the specified size and optimizes internally for either pooled or unpooled.
 /// TODO #1582: This logic will be refactored into the Buffer Provider
 TupleBuffer getBuffer(uint64_t size, AbstractBufferProvider& provider);
+
+/// #1711 StageAndCopy: copy the first `usedBytes` of `staging` plus all its var-sized child buffers into the
+/// pre-allocated `target`, re-attaching children in order so the fixed part's child indices stay valid. Buffer
+/// metadata (watermark/origin/sequence/...) is set by the caller (emitRecordBuffer), so it is not copied here.
+void copyUsedRecordsInto(TupleBuffer& target, const TupleBuffer& staging, uint64_t usedBytes, AbstractBufferProvider& provider);
 }
 
 /**

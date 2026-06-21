@@ -56,12 +56,13 @@ public:
 void EmitPhysicalOperator::open(ExecutionContext& ctx, RecordBuffer& inputRecordBuffer) const
 {
     /// #1711: the allocation strategy is fixed per operator (compile-time), so exactly one branch is specialised into
-    /// the generated code. InputSized/StageAndCopy size the output buffer DOWN to the input cardinality (an upper bound
-    /// for map/filter/projection), capped at the operator buffer size; with size classes enabled getBuffer() serves the
-    /// smallest fitting class, with them off it returns the default-size buffer. EagerFull/ReuseAcrossRuns keep the
-    /// original full-size allocation. Under-estimates are handled by the flush-on-full path in execute().
-    /// TODO(#1711): StageAndCopy = copy to an exact buffer at flush; ReuseAcrossRuns = carry a partial buffer across runs.
-    if (mode == EmitBufferAllocationMode::InputSized || mode == EmitBufferAllocationMode::StageAndCopy)
+    /// the generated code. InputSized sizes the output buffer DOWN to the input cardinality (an upper bound for
+    /// map/filter/projection), capped at the operator buffer size; with size classes enabled getBuffer() serves the
+    /// smallest fitting class, with them off it returns the default-size buffer. EagerFull/StageAndCopy/ReuseAcrossRuns
+    /// stage in a full-size buffer (StageAndCopy right-sizes it at the final flush in close(); see there). Output buffer
+    /// under-estimates are handled by the flush-on-full path in execute().
+    /// TODO(#1711): ReuseAcrossRuns = carry a partial buffer across runs.
+    if (mode == EmitBufferAllocationMode::InputSized)
     {
         nautilus::val<uint64_t> targetBytes = bufferRef->getBufferSize();
         const auto wanted = inputRecordBuffer.getNumRecords() * bufferRef->getTupleSize();
@@ -95,7 +96,7 @@ void EmitPhysicalOperator::execute(ExecutionContext& ctx, Record& record) const
     if (!writeResult.successful)
     {
         emitRecordBuffer(ctx, emitState->resultBuffer, emitState->outputIndex, false);
-        const auto sized = (mode == EmitBufferAllocationMode::InputSized || mode == EmitBufferAllocationMode::StageAndCopy);
+        const auto sized = (mode == EmitBufferAllocationMode::InputSized);
         const auto resultBufferRef = sized ? ctx.allocateBuffer(emitState->targetBytes) : ctx.allocateBuffer();
         emitState->resultBuffer = RecordBuffer(resultBufferRef);
         emitState->bufferMemoryArea = emitState->resultBuffer.getMemArea();
@@ -112,7 +113,19 @@ void EmitPhysicalOperator::close(ExecutionContext& ctx, RecordBuffer&) const
 {
     /// emit current buffer and set the metadata
     auto* const emitState = dynamic_cast<EmitState*>(ctx.getLocalState(id));
-    emitRecordBuffer(ctx, emitState->resultBuffer, emitState->outputIndex, true);
+    if (mode == EmitBufferAllocationMode::StageAndCopy)
+    {
+        /// #1711: the staging buffer is full-size; copy only the written records (and their var-sized children) into a
+        /// right-sized buffer so a partially-filled final flush pins an exactly-sized buffer downstream.
+        const auto usedBytes = emitState->outputIndex * bufferRef->getTupleSize();
+        const auto rightSizedRef = ctx.copyToRightSizedBuffer(emitState->resultBuffer.getReference(), usedBytes);
+        RecordBuffer rightSized(rightSizedRef);
+        emitRecordBuffer(ctx, rightSized, emitState->outputIndex, true);
+    }
+    else
+    {
+        emitRecordBuffer(ctx, emitState->resultBuffer, emitState->outputIndex, true);
+    }
 }
 
 namespace
