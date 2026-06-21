@@ -1,0 +1,7 @@
+# #1711 + #1706: InputSized emit with power-of-two size classes enabled, so low-cardinality outputs are served from
+# a smaller size class instead of pinning a full operator-buffer-size buffer. Used to show the memory benefit (E3).
+default_query_execution:
+  emit_buffer_allocation_mode: InputSized
+enable_buffer_size_classes: true
+buffer_size_class_min_bytes: 256
+buffer_size_class_max_bytes: 1048576

@@ -53,10 +53,15 @@ void PhysicalPlanBuilder::setOperatorBufferSize(uint64_t bufferSize)
     operatorBufferSize = bufferSize;
 }
 
+void PhysicalPlanBuilder::setEmitBufferAllocationMode(EmitBufferAllocationMode mode)
+{
+    emitBufferAllocationMode = mode;
+}
+
 PhysicalPlan PhysicalPlanBuilder::finalize() &&
 {
     auto sources = flip(sinks);
-    return {queryId, std::move(sources), executionMode, operatorBufferSize};
+    return {queryId, std::move(sources), executionMode, operatorBufferSize, emitBufferAllocationMode};
 }
 
 using PhysicalOpPtr = std::shared_ptr<PhysicalOperatorWrapper>;

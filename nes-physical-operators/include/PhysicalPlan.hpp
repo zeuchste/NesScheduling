@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 #include <Identifiers/Identifiers.hpp>
+#include <Util/EmitBufferAllocationMode.hpp>
 #include <Util/ExecutionMode.hpp>
 #include <Util/Logger/Formatter.hpp>
 #include <PhysicalOperator.hpp>
@@ -41,17 +42,24 @@ public:
     [[nodiscard]] const Roots& getRootOperators() const;
     [[nodiscard]] ExecutionMode getExecutionMode() const;
     [[nodiscard]] uint64_t getOperatorBufferSize() const;
+    [[nodiscard]] EmitBufferAllocationMode getEmitBufferAllocationMode() const;
 
 private:
     QueryId queryId;
     Roots rootOperators;
     ExecutionMode executionMode;
     uint64_t operatorBufferSize;
+    EmitBufferAllocationMode emitBufferAllocationMode;
 
     [[nodiscard]] std::string toString() const;
 
     friend class PhysicalPlanBuilder;
-    PhysicalPlan(QueryId id, Roots rootOperators, ExecutionMode executionMode, uint64_t operatorBufferSize);
+    PhysicalPlan(
+        QueryId id,
+        Roots rootOperators,
+        ExecutionMode executionMode,
+        uint64_t operatorBufferSize,
+        EmitBufferAllocationMode emitBufferAllocationMode);
 };
 }
 

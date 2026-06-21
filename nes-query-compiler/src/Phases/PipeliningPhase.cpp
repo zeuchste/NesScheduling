@@ -149,6 +149,11 @@ std::shared_ptr<Pipeline> createNewPipelineWithScan(
     return newPipeline;
 }
 
+/// #1711: emit-buffer allocation mode for the query currently being lowered. Set once per apply() on the compiling
+/// thread and read by addDefaultEmit/addOutputFormattingEmit. thread_local so concurrent query compilations don't race;
+/// avoids threading the mode through the whole buildPipelineRecursively call chain.
+thread_local EmitBufferAllocationMode tlsEmitBufferAllocationMode = EmitBufferAllocationMode::EagerFull;
+
 /// Helper function to add a default emit operator
 /// This is used only when the wrapped operator does not already provide an emit
 /// @note Once we have refactored the memory layout and schema we can get rid of the configured buffer size.
@@ -166,7 +171,7 @@ void addDefaultEmit(
     /// Create an operator handler for the emit
     const OperatorHandlerId operatorHandlerIndex = getNextOperatorHandlerId();
     pipeline->getOperatorHandlers().emplace(operatorHandlerIndex, std::make_shared<EmitOperatorHandler>());
-    pipeline->appendOperator(EmitPhysicalOperator(operatorHandlerIndex, bufferRef));
+    pipeline->appendOperator(EmitPhysicalOperator(operatorHandlerIndex, bufferRef, tlsEmitBufferAllocationMode));
 }
 
 /// Helper functions to add an emit operator that also performs output formatting. A sink should follow such emit operators at all times, since
@@ -187,7 +192,7 @@ void addOutputFormattingEmit(
     /// Create an operator handler for the emit
     const OperatorHandlerId operatorHandlerIndex = getNextOperatorHandlerId();
     pipeline->getOperatorHandlers().emplace(operatorHandlerIndex, std::make_shared<EmitOperatorHandler>());
-    pipeline->appendOperator(EmitPhysicalOperator(operatorHandlerIndex, bufferRef));
+    pipeline->appendOperator(EmitPhysicalOperator(operatorHandlerIndex, bufferRef, tlsEmitBufferAllocationMode));
 }
 
 enum class PipelinePolicy : uint8_t
@@ -454,6 +459,7 @@ void buildPipelineRecursively(
 std::shared_ptr<PipelinedQueryPlan> apply(const PhysicalPlan& physicalPlan)
 {
     const uint64_t configuredBufferSize = physicalPlan.getOperatorBufferSize();
+    tlsEmitBufferAllocationMode = physicalPlan.getEmitBufferAllocationMode();
     auto pipelinedPlan = std::make_shared<PipelinedQueryPlan>(physicalPlan.getQueryId(), physicalPlan.getExecutionMode());
 
     OperatorPipelineMap pipelineMap;

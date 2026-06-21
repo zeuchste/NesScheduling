@@ -1,0 +1,4 @@
+# #1711: select the InputSized emit-buffer allocation mode. Without size classes this is correctness-equivalent
+# to EagerFull (getBuffer(size) returns a default-size buffer); used to verify the mode is selectable and correct.
+default_query_execution:
+  emit_buffer_allocation_mode: InputSized
