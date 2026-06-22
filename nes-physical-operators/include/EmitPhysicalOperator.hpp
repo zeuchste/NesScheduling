@@ -17,11 +17,11 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <Util/EmitBufferAllocationMode.hpp>
 #include <Interface/BufferRef/TupleBufferRef.hpp>
 #include <Interface/Record.hpp>
 #include <Interface/RecordBuffer.hpp>
 #include <Runtime/Execution/OperatorHandler.hpp>
+#include <Util/EmitBufferAllocationMode.hpp>
 #include <nautilus/val.hpp>
 #include <CompilationContext.hpp>
 #include <ExecutionContext.hpp>
@@ -40,9 +40,9 @@ public:
         std::shared_ptr<TupleBufferRef> bufferRef,
         EmitBufferAllocationMode mode = EmitBufferAllocationMode::EagerFull);
 
-    void setup(ExecutionContext&, CompilationContext&) const override { /*noop*/ }
+    void setup(ExecutionContext& ctx, CompilationContext&) const override;
 
-    void terminate(ExecutionContext&) const override { /*noop*/ }
+    void terminate(ExecutionContext& ctx) const override;
 
     void open(ExecutionContext& ctx, RecordBuffer& recordBuffer) const override;
     void execute(ExecutionContext& ctx, Record& record) const override;
