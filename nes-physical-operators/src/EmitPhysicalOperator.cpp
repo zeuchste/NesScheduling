@@ -117,7 +117,13 @@ void EmitPhysicalOperator::close(ExecutionContext& ctx, RecordBuffer&) const
     {
         /// #1711: the staging buffer is full-size; copy only the written records (and their var-sized children) into a
         /// right-sized buffer so a partially-filled final flush pins an exactly-sized buffer downstream.
-        const auto usedBytes = emitState->outputIndex * bufferRef->getTupleSize();
+        /// `outputIndex` is incremented by writeRecord's `writtenRecords`, whose unit depends on the buffer ref: for
+        /// fixed-layout tuples it is a record count (so used main-buffer bytes = outputIndex * tupleSize), but for the
+        /// output formatter (OutputFormatterBufferRef) tupleSize is a 0 placeholder and `outputIndex` already counts the
+        /// bytes written into the main buffer (the formatted text). Picking `outputIndex` directly when tupleSize == 0
+        /// avoids multiplying by 0, which previously copied 0 bytes and emitted a debug-filled right-sized buffer.
+        const auto tupleSize = bufferRef->getTupleSize();
+        const auto usedBytes = (tupleSize == 0) ? emitState->outputIndex : emitState->outputIndex * tupleSize;
         const auto rightSizedRef = ctx.copyToRightSizedBuffer(emitState->resultBuffer.getReference(), usedBytes);
         RecordBuffer rightSized(rightSizedRef);
         emitRecordBuffer(ctx, rightSized, emitState->outputIndex, true);
