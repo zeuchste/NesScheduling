@@ -84,6 +84,11 @@ public:
            "SourceDescriptor).",
            {std::make_shared<NumberValidation>()}};
 
+    /// #1713: enables adaptive (AIMD) per-source inflight-buffer provisioning -- the inflight cap starts low and grows
+    /// toward default_max_inflight_buffers under load, decaying when idle. Off by default (fixed cap).
+    BoolOption enableAdaptiveInflightBuffers
+        = {"enable_adaptive_inflight_buffers", "false", "Enable adaptive (AIMD) per-source inflight-buffer provisioning."};
+
     /// Enables disk-backed spilling of stateful operator (window/aggregation) slices when memory pressure is high, so
     /// queries can run with state larger than RAM. Off by default.
     BoolOption enableStateSpilling = {"enable_state_spilling", "false", "Enable disk-backed spilling of operator state."};
@@ -155,6 +160,7 @@ private:
             &unpooledMemoryFraction,
             &numberOfBuffersInGlobalBufferManager,
             &defaultMaxInflightBuffers,
+            &enableAdaptiveInflightBuffers,
             &enableStateSpilling,
             &stateMemoryBudgetInBytes,
             &spillDirectory,

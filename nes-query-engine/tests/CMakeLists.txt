@@ -24,5 +24,6 @@ add_query_engine_test(running-query-plan-test QueryPlanTest.cpp)
 add_query_engine_test(query-engine-configuration-test QueryEngineConfigurationTest.cpp)
 add_query_engine_test(callback-test CallbackTest.cpp)
 add_query_engine_test(buffer-exhaustion-test BufferExhaustionTest.cpp)
+add_query_engine_test(inflight-throttle-test InflightThrottleTest.cpp)
 
 add_subdirectory(Util)
