@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <limits>
@@ -105,6 +106,25 @@ void BufferManager::destroy()
                 pool->getBufferSize(),
                 pool->numAllocations(),
                 pool->numTotal());
+        }
+        /// Benchmark-build escape hatch: NES_INFO is compiled out with no logging, so when NES_BM_STATS is set
+        /// emit the same peak-occupancy + per-size-class breakdown to stderr so memory experiments can read it.
+        if (std::getenv("NES_BM_STATS") != nullptr)
+        {
+            std::fprintf(
+                stderr,
+                "BM_STATS peak_pooled=%zu total=%zu\n",
+                peakUsedPooledBuffers.load(std::memory_order_relaxed),
+                totalBuffers);
+            for (const auto& pool : pools)
+            {
+                std::fprintf(
+                    stderr,
+                    "BM_CLASS size=%zu allocs=%zu buffers=%zu\n",
+                    static_cast<size_t>(pool->getBufferSize()),
+                    pool->numAllocations(),
+                    pool->numTotal());
+            }
         }
         if (totalBuffers != availableBuffers)
         {
