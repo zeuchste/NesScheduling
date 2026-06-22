@@ -29,6 +29,7 @@
 #include <Join/HashJoin/HJSlice.hpp>
 #include <Join/StreamJoinOperatorHandler.hpp>
 #include <Join/StreamJoinUtil.hpp>
+#include <Runtime/AbstractBufferProvider.hpp>
 #include <Sequencing/SequenceData.hpp>
 #include <SliceStore/Slice.hpp>
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
@@ -201,7 +202,7 @@ void HJOperatorHandler::emitSlicesToProbe(
     }
 
     const auto neededBufferSize = sizeof(EmittedHJWindowTrigger) + ((leftHashMaps.size() + rightHashMaps.size()) * sizeof(HashMap*));
-    const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
+    const auto tupleBufferVal = getPagedBuffer(neededBufferSize, *pipelineCtx->getBufferManager());
     if (not tupleBufferVal.has_value())
     {
         throw CannotAllocateBuffer("{}B for the hash join window trigger were requested", neededBufferSize);

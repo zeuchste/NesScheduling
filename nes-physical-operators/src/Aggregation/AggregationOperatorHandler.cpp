@@ -28,6 +28,7 @@
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/HashMap/ChainedHashMap/ChainedHashMap.hpp>
 #include <Interface/HashMap/HashMap.hpp>
+#include <Runtime/AbstractBufferProvider.hpp>
 #include <Runtime/TupleBuffer.hpp>
 #include <SliceStore/Slice.hpp>
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
@@ -105,7 +106,7 @@ void AggregationOperatorHandler::triggerSlices(
         /// - a new hashmap for the probe operator, so that we are not overwriting the thread local hashmaps
         /// - size of EmittedAggregationWindow
         const auto neededBufferSize = sizeof(EmittedAggregationWindow) + (allHashMaps.size() * sizeof(HashMap*));
-        const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
+        const auto tupleBufferVal = getPagedBuffer(neededBufferSize, *pipelineCtx->getBufferManager());
         if (not tupleBufferVal.has_value())
         {
             throw CannotAllocateBuffer("{}B for the hash join window trigger were requested", neededBufferSize);
