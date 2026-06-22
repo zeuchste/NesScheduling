@@ -139,7 +139,7 @@ void HJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) con
                 nautilus::invoke(
                     +[](TupleBuffer* pagedVectorBufferMemArea, AbstractBufferProvider* bufferProvider, uint64_t tupleSize) -> void
                     {
-                        if (auto pagedVectorBuffer = bufferProvider->getUnpooledBuffer(PagedVector::getMainBufferSize()))
+                        if (auto pagedVectorBuffer = getPagedBuffer(PagedVector::getMainBufferSize(), *bufferProvider))
                         {
                             /// initialize paged vector buffer
                             PagedVector::init(pagedVectorBuffer.value(), bufferProvider->getBufferSize(), tupleSize);

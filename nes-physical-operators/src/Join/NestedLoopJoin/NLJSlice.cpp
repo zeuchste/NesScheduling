@@ -42,7 +42,7 @@ NLJSlice::NLJSlice(
     const uint64_t pvPageBufferSize = bufferProvider.getBufferSize();
     for (uint64_t i = 0; i < numberOfWorkerThreads; ++i)
     {
-        if (auto pagedVectorBuffer = bufferProvider.getUnpooledBuffer(pvMainBufferSize))
+        if (auto pagedVectorBuffer = getPagedBuffer(pvMainBufferSize, bufferProvider))
         {
             /// initialize the paged vector tuple buffer
             PagedVector::init(pagedVectorBuffer.value(), pvPageBufferSize, tupleSizeLeft);
@@ -56,7 +56,7 @@ NLJSlice::NLJSlice(
 
     for (uint64_t i = 0; i < numberOfWorkerThreads; ++i)
     {
-        if (auto pagedVectorBuffer = bufferProvider.getUnpooledBuffer(pvMainBufferSize))
+        if (auto pagedVectorBuffer = getPagedBuffer(pvMainBufferSize, bufferProvider))
         {
             /// initialize the paged vector tuple buffer
             PagedVector::init(pagedVectorBuffer.value(), pvPageBufferSize, tupleSizeRight);
