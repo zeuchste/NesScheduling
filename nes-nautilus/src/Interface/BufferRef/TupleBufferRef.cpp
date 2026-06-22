@@ -60,13 +60,15 @@ TupleBuffer getNewBufferForVarSized(AbstractBufferProvider& tupleBufferProvider,
             return newBuffer.value();
         }
     }
-    const auto unpooledBuffer = tupleBufferProvider.getUnpooledBuffer(newBufferSize);
-    if (not unpooledBuffer.has_value())
+    /// #1712: route variable-sized allocations through the size-class path (unpooled only as the bounded oversize
+    /// fallback when size classes are off or the request exceeds the largest class).
+    const auto pagedBuffer = getPagedBuffer(newBufferSize, tupleBufferProvider);
+    if (not pagedBuffer.has_value())
     {
-        throw BufferAllocationFailure("Cannot allocate unpooled buffer of size {}", newBufferSize);
+        throw BufferAllocationFailure("Cannot allocate variable-sized buffer of size {}", newBufferSize);
     }
 
-    return unpooledBuffer.value();
+    return pagedBuffer.value();
 }
 
 /// @brief Copies the varSizedValue to the specified location and then increments the number of tuples

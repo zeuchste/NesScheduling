@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 #include <Identifiers/Identifiers.hpp>
+#include <Runtime/AbstractBufferProvider.hpp>
 #include <Interface/HashMap/HashMap.hpp>
 #include <Join/HashJoin/HJSlice.hpp>
 #include <Join/StreamJoinOperatorHandler.hpp>
@@ -149,7 +150,7 @@ void HJOperatorHandler::emitSlicesToProbe(
     /// - size of EmittedHJWindowTrigger
     /// - all pointers to (left + right) hashmaps of the window to be triggered
     const auto neededBufferSize = sizeof(EmittedHJWindowTrigger) + ((leftHashMaps.size() + rightHashMaps.size()) * sizeof(HashMap*));
-    const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
+    const auto tupleBufferVal = getPagedBuffer(neededBufferSize, *pipelineCtx->getBufferManager());
     if (not tupleBufferVal.has_value())
     {
         throw BufferAllocationFailure("{}B for the hash join window trigger were requested", neededBufferSize);
