@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <Runtime/AbstractBufferProvider.hpp>
 #include <Runtime/TupleBuffer.hpp>
@@ -62,5 +63,27 @@ TupleBuffer deepCopyBuffer(const TupleBuffer& buffer, AbstractBufferProvider& pr
     }
 
     return copiedBuffer;
+}
+
+void copyUsedRecordsInto(TupleBuffer& target, const TupleBuffer& staging, const uint64_t usedBytes, AbstractBufferProvider& provider)
+{
+    PRECONDITION(target.getBufferSize() >= usedBytes, "right-sized target too small: {} < {}", target.getBufferSize(), usedBytes);
+    PRECONDITION(staging.getBufferSize() >= usedBytes, "staging buffer smaller than used bytes: {} < {}", staging.getBufferSize(), usedBytes);
+    /// Copy the written fixed part by raw bytes -- getAvailableMemoryArea() spans the whole buffer, but we only copy the
+    /// `usedBytes` prefix (the staging buffer's numberOfTuples is not set yet, so we must not derive the length from it).
+    if (usedBytes > 0)
+    {
+        std::memcpy(
+            target.getAvailableMemoryArea<std::byte>().data(), staging.getAvailableMemoryArea<std::byte>().data(), usedBytes);
+    }
+    /// Re-attach var-sized child buffers in the same order so the fixed part's child indices stay valid.
+    for (size_t childIdx = 0; childIdx < staging.getNumberOfChildBuffers(); ++childIdx)
+    {
+        const VariableSizedAccess::Index varSizedIndex{childIdx};
+        auto childBuffer = staging.loadChildBuffer(varSizedIndex);
+        auto copiedChildBuffer = deepCopyBuffer(childBuffer, provider);
+        auto ret = target.storeChildBuffer(copiedChildBuffer);
+        INVARIANT(ret == varSizedIndex, "Child buffer index: {}, does not match index: {}", childIdx, ret);
+    }
 }
 }

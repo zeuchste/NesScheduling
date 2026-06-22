@@ -97,6 +97,12 @@ struct ExecutionContext final
     /// pipeline emitting few tuples need not pin a full-size buffer (#1711).
     [[nodiscard]] nautilus::val<TupleBuffer*> allocateBuffer(const nautilus::val<uint64_t>& sizeInBytes) const;
 
+    /// #1711 StageAndCopy: allocate a right-sized buffer (>= usedBytes, through the arbiter), copy the first `usedBytes`
+    /// of `staging` plus its var-sized children into it, pin it and return it. Used to right-size a partially-filled
+    /// emit buffer at flush so downstream pins an exactly-sized buffer instead of the full staging buffer.
+    [[nodiscard]] nautilus::val<TupleBuffer*>
+    copyToRightSizedBuffer(const nautilus::val<TupleBuffer*>& staging, const nautilus::val<uint64_t>& usedBytes) const;
+
     /// Use allocateMemory if you want to allocate memory that lives for one pipeline invocation, i.e., tuple buffer lifetime.
     /// You do not have to take care of the memory management yourself, as the memory is automatically destroyed after the pipeline invocation.
     [[nodiscard]] nautilus::val<int8_t*> allocateMemory(const nautilus::val<size_t>& sizeInBytes);
