@@ -294,7 +294,7 @@ std::span<std::byte> DefaultTimeBasedSliceStore::allocateSpaceForSliceCache(
 {
     INVARIANT(not pipelineIdToSliceCacheStarts.rlock()->contains(pipelineId), "We expect this method to be called once per pipelineId!");
 
-    auto buffer = bufferProvider.getUnpooledBuffer(sliceCacheMemorySize);
+    auto buffer = getPagedBuffer(sliceCacheMemorySize, bufferProvider);
     if (not buffer.has_value())
     {
         throw BufferAllocationFailure("Can not allocate buffer for slice cache of size {}", sliceCacheMemorySize);
