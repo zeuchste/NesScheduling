@@ -15,6 +15,8 @@
 #include <EmitOperatorHandler.hpp>
 
 #include <cstdint>
+#include <optional>
+#include <utility>
 #include <Identifiers/Identifiers.hpp>
 #include <Identifiers/NESStrongType.hpp>
 #include <Runtime/QueryTerminationType.hpp>
@@ -82,12 +84,57 @@ void EmitOperatorHandler::setChunkNumber(
     }
 }
 
+void EmitOperatorHandler::registerCarriedInputChunk(SequenceNumber sequenceNumber, OriginId originId)
+{
+    /// #1711 ReuseAcrossRuns: when a not-last input chunk is carried (its output is buffered, not emitted), the normal
+    /// per-chunk completeness bump in setChunkNumber is skipped. Register the consumed input chunk here so the final
+    /// flush -- which calls setChunkNumber exactly once for the whole sequence -- still completes the sequence: seenChunks
+    /// reaches the input chunk count, matching (lastChunkNumber - INITIAL). We intentionally do NOT advance
+    /// nextChunkNumberCounter, so the single emitted output buffer keeps chunk number INITIAL.
+    const auto lock = sequenceStates.wlock();
+    (*lock)[SequenceNumberForOriginId(sequenceNumber, originId)].seenChunks++;
+}
+
 void EmitOperatorHandler::start(PipelineExecutionContext&, uint32_t)
 {
 }
 
-void EmitOperatorHandler::stop(QueryTerminationType, PipelineExecutionContext&)
+void EmitOperatorHandler::stop(QueryTerminationType, PipelineExecutionContext& pipelineExecutionContext)
 {
+    /// #1711 ReuseAcrossRuns: flush every partial output buffer that is still carried by a worker thread, so the records
+    /// buffered across invocations are not stranded at query end. Each buffer already carries the metadata stamped by
+    /// the close() that stashed it (origin/seq/watermark/chunk and lastChunk); we only need to publish numTuples and
+    /// emit. For every other emit mode this map is empty, so this is a no-op.
+    const auto lock = carriedBuffers.wlock();
+    for (auto& [workerThreadId, carried] : *lock)
+    {
+        if (carried.numRecords == 0)
+        {
+            continue;
+        }
+        carried.buffer.setNumberOfTuples(carried.numRecords);
+        pipelineExecutionContext.emitBuffer(carried.buffer, PipelineExecutionContext::ContinuationPolicy::POSSIBLE);
+    }
+    lock->clear();
+}
+
+std::optional<CarriedOutputBuffer> EmitOperatorHandler::takeCarriedBuffer(const WorkerThreadId workerThreadId)
+{
+    const auto lock = carriedBuffers.wlock();
+    const auto it = lock->find(workerThreadId);
+    if (it == lock->end())
+    {
+        return std::nullopt;
+    }
+    auto carried = std::move(it->second);
+    lock->erase(it);
+    return carried;
+}
+
+void EmitOperatorHandler::storeCarriedBuffer(const WorkerThreadId workerThreadId, TupleBuffer&& buffer, const uint64_t numRecords)
+{
+    const auto lock = carriedBuffers.wlock();
+    (*lock)[workerThreadId] = CarriedOutputBuffer{.buffer = std::move(buffer), .numRecords = numRecords};
 }
 
 }
