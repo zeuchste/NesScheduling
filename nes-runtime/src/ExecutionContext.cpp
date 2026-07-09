@@ -13,8 +13,11 @@
 */
 #include <ExecutionContext.hpp>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <span>
 #include <string>
@@ -121,9 +124,45 @@ nautilus::val<int8_t*> ExecutionContext::allocateMemory(const nautilus::val<size
     return pipelineMemoryProvider.arena.allocateMemory(sizeInBytes);
 }
 
+namespace
+{
+/// Benchmark-build emit accounting (#1711 memory eval): when NES_EMIT_STATS is set, accumulate the size
+/// of every emitted output buffer and the tuples it carried, dumping the totals at process exit. This
+/// measures the *emitted* buffer sizes (not pool allocation), so it is deterministic and immune to the
+/// elastic pool-growth noise that confounds the pool-wide counters. Comparing the total across emit modes
+/// (EagerFull vs InputSized/StageAndCopy) on one workload yields the emit-memory reduction and fill ratio.
+std::atomic<uint64_t> emitStatsBytes{0};
+std::atomic<uint64_t> emitStatsTuples{0};
+std::atomic<uint64_t> emitStatsCount{0};
+const bool emitStatsEnabled = []
+{
+    if (std::getenv("NES_EMIT_STATS") == nullptr)
+    {
+        return false;
+    }
+    std::atexit(
+        []
+        {
+            std::fprintf(
+                stderr,
+                "EMIT_STATS bytes=%llu tuples=%llu count=%llu\n",
+                static_cast<unsigned long long>(emitStatsBytes.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(emitStatsTuples.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(emitStatsCount.load(std::memory_order_relaxed)));
+        });
+    return true;
+}();
+}
+
 void emitBufferProxy(PipelineExecutionContext* pipelineCtx, TupleBuffer* tb)
 {
     NES_TRACE("Emitting buffer with SequenceData = {}", tb->getSequenceDataAsString());
+    if (emitStatsEnabled)
+    {
+        emitStatsBytes.fetch_add(tb->getBufferSize(), std::memory_order_relaxed);
+        emitStatsTuples.fetch_add(tb->getNumberOfTuples(), std::memory_order_relaxed);
+        emitStatsCount.fetch_add(1, std::memory_order_relaxed);
+    }
 
     /* We have to emit all buffer, regardless of their number of tuples. This is due to the fact, that we expect all
      * sequence numbers to reach any operator. Sending empty buffers will have some overhead. As we are performing operator
