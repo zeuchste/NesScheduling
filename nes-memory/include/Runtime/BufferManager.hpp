@@ -224,6 +224,14 @@ private:
     std::atomic<size_t> usedPooledBuffers{0};
     std::atomic<size_t> peakUsedPooledBuffers{0};
     void updatePeakUsed(size_t current) noexcept;
+
+    /// Instrumentation: live sum and high-water-mark of the *bytes* held by in-use pooled buffers
+    /// (each buffer contributes its size-class size). Together with the count above this quantifies
+    /// resident execution memory, so right-sized emit (a small class) shows up as fewer peak bytes than
+    /// eager full-size emit (the default class). Same relaxed hot-path discipline as the count.
+    std::atomic<size_t> usedPooledBytes{0};
+    std::atomic<size_t> peakUsedPooledBytes{0};
+    void updatePeakUsedBytes(size_t current) noexcept;
 };
 
 

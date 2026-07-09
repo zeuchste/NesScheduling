@@ -113,9 +113,10 @@ void BufferManager::destroy()
         {
             std::fprintf(
                 stderr,
-                "BM_STATS peak_pooled=%zu total=%zu\n",
+                "BM_STATS peak_pooled=%zu total=%zu peak_pooled_bytes=%zu\n",
                 peakUsedPooledBuffers.load(std::memory_order_relaxed),
-                totalBuffers);
+                totalBuffers,
+                peakUsedPooledBytes.load(std::memory_order_relaxed));
             for (const auto& pool : pools)
             {
                 std::fprintf(
@@ -313,6 +314,7 @@ TupleBuffer BufferManager::wrapSegment(detail::MemorySegment* segment)
     if (segment->controlBlock->prepare(shared_from_this()))
     {
         updatePeakUsed(usedPooledBuffers.fetch_add(1, std::memory_order_relaxed) + 1);
+        updatePeakUsedBytes(usedPooledBytes.fetch_add(segment->size, std::memory_order_relaxed) + segment->size);
         return TupleBuffer(segment->controlBlock.get(), segment->ptr, segment->size);
     }
     throw InvalidRefCountForBuffer("[BufferManager] got buffer with invalid reference counter");
@@ -405,6 +407,7 @@ std::optional<TupleBuffer> BufferManager::getUnpooledBuffer(const size_t bufferS
 void BufferManager::recyclePooledBuffer(detail::MemorySegment* segment)
 {
     usedPooledBuffers.fetch_sub(1, std::memory_order_relaxed);
+    usedPooledBytes.fetch_sub(segment->size, std::memory_order_relaxed);
     INVARIANT(segment->isAvailable(), "Recycling buffer callback invoked on used memory segment");
     INVARIANT(
         segment->controlBlock->owningBufferRecycler == nullptr, "Buffer should not retain a reference to its parent while not in use");
@@ -429,6 +432,14 @@ void BufferManager::updatePeakUsed(size_t current) noexcept
 {
     auto previous = peakUsedPooledBuffers.load(std::memory_order_relaxed);
     while (current > previous && !peakUsedPooledBuffers.compare_exchange_weak(previous, current, std::memory_order_relaxed))
+    {
+    }
+}
+
+void BufferManager::updatePeakUsedBytes(size_t current) noexcept
+{
+    auto previous = peakUsedPooledBytes.load(std::memory_order_relaxed);
+    while (current > previous && !peakUsedPooledBytes.compare_exchange_weak(previous, current, std::memory_order_relaxed))
     {
     }
 }
