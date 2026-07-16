@@ -15,7 +15,10 @@
 #include <NetworkBindings.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include <Identifiers/Identifiers.hpp>
@@ -42,6 +45,39 @@ void initNetworkServices( /// NOLINT(misc-use-internal-linkage)
     init_sender_service(rust::String(connectionAddr), rust::String(host.getRawValue()), cxxOptions);
 }
 
+namespace
+{
+/// Benchmark-build wire accounting (#1704 E2 eval): when NES_WIRE_STATS is set, count the buffers that
+/// arrive over the network channel and the pooled bytes the receiver allocates for them, dumped at exit.
+/// This proves that variable-sized data (which travels as child buffers) crosses the wire and is
+/// right-sized into a pooled size class on receipt -- the size-aware-wire claim, measured directly.
+std::atomic<uint64_t> wireParentReallocs{0};
+std::atomic<uint64_t> wireParentBytes{0};
+std::atomic<uint64_t> wireChildCount{0};
+std::atomic<uint64_t> wireChildBytes{0};
+std::atomic<uint64_t> wireChildPooledBytes{0};
+const bool wireStatsEnabled = []
+{
+    if (std::getenv("NES_WIRE_STATS") == nullptr)
+    {
+        return false;
+    }
+    std::atexit(
+        []
+        {
+            std::fprintf(
+                stderr,
+                "WIRE_STATS parent_reallocs=%llu parent_bytes=%llu child_count=%llu child_bytes=%llu child_pooled_bytes=%llu\n",
+                static_cast<unsigned long long>(wireParentReallocs.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(wireParentBytes.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(wireChildCount.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(wireChildBytes.load(std::memory_order_relaxed)),
+                static_cast<unsigned long long>(wireChildPooledBytes.load(std::memory_order_relaxed)));
+        });
+    return true;
+}();
+}
+
 void TupleBufferBuilder::setMetadata(const SerializedTupleBufferHeader& metaData)
 {
     /// #1704: if the sender's buffer is larger than the pre-allocated receive buffer (e.g. a larger size class),
@@ -51,6 +87,11 @@ void TupleBufferBuilder::setMetadata(const SerializedTupleBufferHeader& metaData
     if (metaData.buffer_size > buffer.getBufferSize())
     {
         buffer = bufferProvider.getBuffer(metaData.buffer_size);
+        if (wireStatsEnabled)
+        {
+            wireParentReallocs.fetch_add(1, std::memory_order_relaxed);
+            wireParentBytes.fetch_add(metaData.buffer_size, std::memory_order_relaxed);
+        }
     }
     buffer.setSequenceNumber(NES::SequenceNumber(metaData.sequence_number));
     buffer.setChunkNumber(NES::ChunkNumber(metaData.chunk_number));
@@ -76,6 +117,13 @@ void TupleBufferBuilder::addChildBuffer(const rust::Slice<const uint8_t> child)
     /// Serve the child buffer from the smallest fitting pooled size class (falling back to unpooled
     /// for very large children). The returned buffer is guaranteed to be >= child.size().
     auto childBuffer = bufferProvider.getBuffer(child.size());
+
+    if (wireStatsEnabled)
+    {
+        wireChildCount.fetch_add(1, std::memory_order_relaxed);
+        wireChildBytes.fetch_add(child.size(), std::memory_order_relaxed);
+        wireChildPooledBytes.fetch_add(childBuffer.getBufferSize(), std::memory_order_relaxed);
+    }
 
     INVARIANT(
         childBuffer.getBufferSize() >= child.length(),
