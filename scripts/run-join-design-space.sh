@@ -63,12 +63,15 @@ run_config "SORT_MERGE_JOIN" SORT_MERGE_JOIN
 ## A4: index join (shared, incrementally maintained ordered index)
 run_config "INDEX_JOIN" INDEX_JOIN
 
-## A1: hash join, storage x processing matrix (lazy trigger)
+## A1: hash join, storage x build x probe matrix (lazy trigger)
 for storage in PER_KEY_PAGED SHARED_CHAINS FIXED_ARRAY; do
-    for processing in SINGLE_TASK TASK_PER_PAIR SHARED_TABLE BROADCAST; do
-        run_config "HASH_${storage}_${processing}" HASH_JOIN \
-            --worker.default_query_execution.join_storage="$storage" \
-            --worker.default_query_execution.join_processing="$processing"
+    for build in LOCAL_TABLES SHARED_TABLE; do
+        for probe in SINGLE_TASK TABLE_BROADCAST TASK_PER_PAIR BUCKET_RANGES; do
+            run_config "HASH_${storage}_${build}_${probe}" HASH_JOIN \
+                --worker.default_query_execution.join_storage="$storage" \
+                --worker.default_query_execution.join_build="$build" \
+                --worker.default_query_execution.join_probe="$probe"
+        done
     done
 done
 

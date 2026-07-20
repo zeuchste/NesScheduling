@@ -69,7 +69,9 @@ void HJProbePhysicalOperatorBase::performMatchPairsProbe(
     nautilus::val<uint64_t> rightNumberOfHashMaps,
     ExecutionContext& executionCtx,
     const nautilus::val<Timestamp>& windowStart,
-    const nautilus::val<Timestamp>& windowEnd) const
+    const nautilus::val<Timestamp>& windowEnd,
+    const nautilus::val<uint64_t>& rightPageStart,
+    const nautilus::val<uint64_t>& rightPageEnd) const
 {
     if (leftNumberOfHashMaps == 0 or rightNumberOfHashMaps == 0)
     {
@@ -79,7 +81,15 @@ void HJProbePhysicalOperatorBase::performMatchPairsProbe(
     if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
     {
         performSharedChainsMatchPairsProbe(
-            leftHashMapRefs, leftNumberOfHashMaps, rightHashMapRefs, rightNumberOfHashMaps, executionCtx, windowStart, windowEnd);
+            leftHashMapRefs,
+            leftNumberOfHashMaps,
+            rightHashMapRefs,
+            rightNumberOfHashMaps,
+            executionCtx,
+            windowStart,
+            windowEnd,
+            rightPageStart,
+            rightPageEnd);
         return;
     }
 
@@ -94,8 +104,10 @@ void HJProbePhysicalOperatorBase::performMatchPairsProbe(
         {
             const nautilus::val<HashMap*> rightHashMapPtr = rightHashMapRefs[rightHashMapIndex];
             const ChainedHashMapRef rightHashMap = makeChainedHashMapRef(rightHashMapPtr, rightHashMapOptions);
-            for (const auto rightEntry : rightHashMap)
+            const auto rightRangeEnd = rightHashMap.endRange(rightPageStart, rightPageEnd);
+            for (auto rightIt = rightHashMap.beginRange(rightPageStart, rightPageEnd); rightIt != rightRangeEnd; ++rightIt)
             {
+                const auto rightEntry = *rightIt;
                 const ChainedHashMapRef::ChainedEntryRef rightEntryRef{
                     rightEntry, rightHashMapPtr, rightHashMapOptions.fieldKeys, rightHashMapOptions.fieldValues};
                 auto rightPagedVectorMem = rightEntryRef.getValueMemArea();
@@ -152,7 +164,9 @@ void HJProbePhysicalOperatorBase::performSharedChainsMatchPairsProbe(
     nautilus::val<uint64_t> rightNumberOfHashMaps,
     ExecutionContext& executionCtx,
     const nautilus::val<Timestamp>& windowStart,
-    const nautilus::val<Timestamp>& windowEnd) const
+    const nautilus::val<Timestamp>& windowEnd,
+    const nautilus::val<uint64_t>& rightPageStart,
+    const nautilus::val<uint64_t>& rightPageEnd) const
 {
     const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
     const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
@@ -165,8 +179,10 @@ void HJProbePhysicalOperatorBase::performSharedChainsMatchPairsProbe(
         {
             const nautilus::val<HashMap*> rightHashMapPtr = rightHashMapRefs[rightHashMapIndex];
             const ChainedHashMapRef rightHashMap = makeChainedHashMapRef(rightHashMapPtr, rightHashMapOptions);
-            for (const auto rightEntry : rightHashMap)
+            const auto rightRangeEnd = rightHashMap.endRange(rightPageStart, rightPageEnd);
+            for (auto rightIt = rightHashMap.beginRange(rightPageStart, rightPageEnd); rightIt != rightRangeEnd; ++rightIt)
             {
+                const auto rightEntry = *rightIt;
                 const ChainedHashMapRef::ChainedEntryRef rightEntryRef{
                     rightEntry, rightHashMapPtr, rightHashMapOptions.fieldKeys, rightHashMapOptions.fieldValues};
                 const auto rightRecord = reconstructRecordFromEntry(rightEntryRef, rightHashMapOptions);

@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 #include <Identifiers/Identifiers.hpp>
+#include <Interface/HashMap/ChainedHashMap/ChainedHashMap.hpp>
 #include <Interface/HashMap/HashMap.hpp>
 #include <Join/HashJoin/HJSlice.hpp>
 #include <Join/StreamJoinOperatorHandler.hpp>
@@ -78,7 +79,9 @@ HJOperatorHandler::HJOperatorHandler(
     std::unique_ptr<WindowSlicesStoreInterface> sliceAndWindowStore,
     const uint64_t maxNumberOfBuckets,
     JoinTriggerStrategy triggerStrategy,
-    const JoinProcessingVariant processingVariant,
+    const JoinBuildVariant buildVariant,
+    const JoinProbeVariant probeVariant,
+    const uint64_t probeRanges,
     const std::optional<uint64_t> fixedNumberOfBuckets)
     : StreamJoinOperatorHandler(inputOrigins, outputOriginId, std::move(sliceAndWindowStore), std::move(triggerStrategy))
     , setupAlreadyCalledLeft(false)
@@ -86,7 +89,9 @@ HJOperatorHandler::HJOperatorHandler(
     , leftRollingAverageNumberOfKeys(RollingAverage<uint64_t>{100})
     , rightRollingAverageNumberOfKeys(RollingAverage<uint64_t>{100})
     , maxNumberOfBuckets(maxNumberOfBuckets)
-    , processingVariant(processingVariant)
+    , buildVariant(buildVariant)
+    , probeVariant(probeVariant)
+    , probeRanges(probeRanges)
     , fixedNumberOfBuckets(fixedNumberOfBuckets)
 {
 }
@@ -117,9 +122,9 @@ HJOperatorHandler::getCreateNewSlicesFunction(const CreateNewSlicesArguments& ne
         }
     }
 
-    /// P3 (SHARED_TABLE): one hash map per side shared by all worker threads. The map is created eagerly in the
+    /// B2 (SHARED_TABLE): one hash map per side shared by all worker threads. The map is created eagerly in the
     /// slice constructor so that no two threads race on its lazy creation.
-    const auto sharedTable = processingVariant == JoinProcessingVariant::SHARED_TABLE;
+    const auto sharedTable = buildVariant == JoinBuildVariant::SHARED_TABLE;
     const auto numberOfHashMaps = sharedTable ? 1UL : numberOfWorkerThreads;
     return std::function(
         [outputOriginId = outputOriginId, numberOfHashMaps, sharedTable, copyOfNewHashMapArgs = newHashMapArgs](
@@ -207,7 +212,10 @@ void HJOperatorHandler::createProbeTasks(
 
     /// Creates one probe task buffer over the given hash-map subsets; sequence/chunk data is stamped centrally
     /// in StreamJoinOperatorHandler::triggerSlices.
-    const auto createTask = [&](const std::vector<HashMap*>& left, const std::vector<HashMap*>& right)
+    const auto createTask = [&](const std::vector<HashMap*>& left,
+                                const std::vector<HashMap*>& right,
+                                const uint64_t rightPageStart = 0,
+                                const uint64_t rightPageEnd = EmittedHJWindowTrigger::FULL_RANGE)
     {
         uint64_t totalNumberOfTuples = 0;
         for (const auto* map : left)
@@ -233,21 +241,28 @@ void HJOperatorHandler::createProbeTasks(
         tupleBuffer.setCreationTimestampInMS(Timestamp(
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()));
 
-        new (tupleBuffer.getAvailableMemoryArea().data()) EmittedHJWindowTrigger{windowInfo, left, right, probeTaskType};
+        new (tupleBuffer.getAvailableMemoryArea().data())
+            EmittedHJWindowTrigger{windowInfo, left, right, probeTaskType, rightPageStart, rightPageEnd};
         probeTasks.emplace_back(std::move(tupleBuffer));
     };
 
     /// Null-fill tasks are never split: deciding that a tuple has no match requires seeing ALL opposite maps.
-    /// P1 (SINGLE_TASK) and P3 (SHARED_TABLE, one map per side anyway) also emit exactly one task per work item.
     const auto splittable = probeTaskType == ProbeTaskType::MATCH_PAIRS and not leftHashMaps.empty() and not rightHashMaps.empty();
-    switch (splittable ? processingVariant : JoinProcessingVariant::SINGLE_TASK)
+    switch (splittable ? probeVariant : JoinProbeVariant::SINGLE_TASK)
     {
-        case JoinProcessingVariant::SINGLE_TASK:
-        case JoinProcessingVariant::SHARED_TABLE:
+        case JoinProbeVariant::SINGLE_TASK:
             createTask(leftHashMaps, rightHashMaps);
             break;
-        case JoinProcessingVariant::TASK_PER_PAIR:
-            /// P2: one probe task per (left map, right map) pair — the thread-local build maps provide the
+        case JoinProbeVariant::TABLE_BROADCAST:
+            /// P2: one probe task per left table, each carrying the full right side — content-insensitive work
+            /// division, immune to key skew, at a memory-bandwidth premium.
+            for (auto* leftMap : leftHashMaps)
+            {
+                createTask({leftMap}, rightHashMaps);
+            }
+            break;
+        case JoinProbeVariant::TASK_PER_PAIR:
+            /// P3: one probe task per (left table, right table) pair — the thread-local build tables provide the
             /// partitioning for free and each pair is probed without shared state.
             for (auto* leftMap : leftHashMaps)
             {
@@ -257,14 +272,30 @@ void HJOperatorHandler::createProbeTasks(
                 }
             }
             break;
-        case JoinProcessingVariant::BROADCAST:
-            /// P4: one probe task per left map, each carrying the full right side — content-insensitive work
-            /// division, immune to key skew, at a memory-bandwidth premium.
+        case JoinProbeVariant::BUCKET_RANGES: {
+            /// P4: one probe task per (pair, storage-page range of the right table) — the finest granularity,
+            /// and the only one that still parallelizes the probe under the B2 shared build.
+            const auto ranges = std::max<uint64_t>(1, probeRanges != 0 ? probeRanges : numberOfWorkerThreads);
             for (auto* leftMap : leftHashMaps)
             {
-                createTask({leftMap}, rightHashMaps);
+                for (auto* rightMap : rightHashMaps)
+                {
+                    const auto* chainedRight = dynamic_cast<const ChainedHashMap*>(rightMap);
+                    const auto pages = chainedRight != nullptr ? chainedRight->getNumberOfPages() : 0;
+                    if (pages == 0)
+                    {
+                        createTask({leftMap}, {rightMap});
+                        continue;
+                    }
+                    const auto pagesPerRange = (pages + ranges - 1) / ranges;
+                    for (uint64_t start = 0; start < pages; start += pagesPerRange)
+                    {
+                        createTask({leftMap}, {rightMap}, start, std::min(start + pagesPerRange, pages));
+                    }
+                }
             }
             break;
+        }
     }
 }
 

@@ -56,7 +56,9 @@ public:
         JoinStorageVariant storageVariant = JoinStorageVariant::PER_KEY_PAGED);
 
 protected:
-    /// Match-pairs probe: iterates all left hash maps against all right hash maps and emits joined records
+    /// Match-pairs probe: iterates all left hash maps against all right hash maps and emits joined records.
+    /// The right-side iteration is limited to the storage-page range [rightPageStart, rightPageEnd) — pass
+    /// (0, EmittedHJWindowTrigger::FULL_RANGE) for the whole table (the range is clamped to the page count).
     void performMatchPairsProbe(
         nautilus::val<HashMap**> leftHashMapRefs,
         nautilus::val<uint64_t> leftNumberOfHashMaps,
@@ -64,7 +66,9 @@ protected:
         nautilus::val<uint64_t> rightNumberOfHashMaps,
         ExecutionContext& executionCtx,
         const nautilus::val<Timestamp>& windowStart,
-        const nautilus::val<Timestamp>& windowEnd) const;
+        const nautilus::val<Timestamp>& windowEnd,
+        const nautilus::val<uint64_t>& rightPageStart,
+        const nautilus::val<uint64_t>& rightPageEnd) const;
 
     /// Builds a ChainedHashMapRef view over `hashMapPtr` using the key/value layout described by `options`.
     static ChainedHashMapRef makeChainedHashMapRef(const nautilus::val<HashMap*>& hashMapPtr, const HashMapOptions& options);
@@ -77,7 +81,9 @@ protected:
         nautilus::val<uint64_t> rightNumberOfHashMaps,
         ExecutionContext& executionCtx,
         const nautilus::val<Timestamp>& windowStart,
-        const nautilus::val<Timestamp>& windowEnd) const;
+        const nautilus::val<Timestamp>& windowEnd,
+        const nautilus::val<uint64_t>& rightPageStart,
+        const nautilus::val<uint64_t>& rightPageEnd) const;
 
     std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout, rightTupleLayout;
     HashMapOptions leftHashMapOptions, rightHashMapOptions;

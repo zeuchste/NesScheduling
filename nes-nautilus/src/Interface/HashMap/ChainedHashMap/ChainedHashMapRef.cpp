@@ -330,6 +330,67 @@ ChainedHashMapRef::EntryIterator ChainedHashMapRef::end() const
     return {hashMapRef, nullptr, entrySize, numberOfTuples, -1, -1, -1, -1};
 }
 
+namespace
+{
+uint64_t clampedPageEndProxy(const HashMap* hashMap, const uint64_t pageEnd)
+{
+    const auto numberOfPages = dynamic_cast<const ChainedHashMap*>(hashMap)->getNumberOfPages();
+    return pageEnd < numberOfPages ? pageEnd : numberOfPages;
+}
+
+uint64_t entriesInPageRangeProxy(const HashMap* hashMap, const uint64_t pageStart, const uint64_t pageEnd)
+{
+    const auto* chainedHashMap = dynamic_cast<const ChainedHashMap*>(hashMap);
+    uint64_t count = 0;
+    for (uint64_t page = pageStart; page < pageEnd; ++page)
+    {
+        count += chainedHashMap->getPage(page).getNumberOfTuples();
+    }
+    return count;
+}
+}
+
+ChainedHashMapRef::EntryIterator
+ChainedHashMapRef::beginRange(const nautilus::val<uint64_t>& pageStart, const nautilus::val<uint64_t>& pageEnd) const
+{
+    const auto clampedEnd = nautilus::invoke(clampedPageEndProxy, hashMapRef, pageEnd);
+    const auto currentEntry = nautilus::invoke(
+        +[](const HashMap* hashMap, const uint64_t pageStartVal, const uint64_t pageEndVal)
+        {
+            if (pageStartVal >= pageEndVal)
+            {
+                return decltype(dynamic_cast<const ChainedHashMap*>(hashMap)->getPage(0).getAvailableMemoryArea().data()){nullptr};
+            }
+            return dynamic_cast<const ChainedHashMap*>(hashMap)->getPage(pageStartVal).getAvailableMemoryArea().data();
+        },
+        hashMapRef,
+        pageStart,
+        clampedEnd);
+    const auto numberOfTuplesInCurrentPage = nautilus::invoke(
+        +[](const HashMap* hashMap, const uint64_t pageStartVal, const uint64_t pageEndVal) -> uint64_t
+        {
+            if (pageStartVal >= pageEndVal)
+            {
+                return 0;
+            }
+            return dynamic_cast<const ChainedHashMap*>(hashMap)->getPage(pageStartVal).getNumberOfTuples();
+        },
+        hashMapRef,
+        pageStart,
+        clampedEnd);
+    const nautilus::val<uint64_t> tupleIndex = 0;
+    const nautilus::val<uint64_t> indexOnPage = 0;
+    return {hashMapRef, currentEntry, entrySize, tupleIndex, indexOnPage, numberOfTuplesInCurrentPage, pageStart, clampedEnd};
+}
+
+ChainedHashMapRef::EntryIterator
+ChainedHashMapRef::endRange(const nautilus::val<uint64_t>& pageStart, const nautilus::val<uint64_t>& pageEnd) const
+{
+    const auto clampedEnd = nautilus::invoke(clampedPageEndProxy, hashMapRef, pageEnd);
+    const auto entriesInRange = nautilus::invoke(entriesInPageRangeProxy, hashMapRef, pageStart, clampedEnd);
+    return {hashMapRef, nullptr, entrySize, entriesInRange, -1, -1, -1, -1};
+}
+
 nautilus::val<ChainedHashMapEntry*> ChainedHashMapRef::findChain(const HashFunction::HashValue& hash) const
 {
     const auto numberOfTuplesRef = getMemberRef(hashMapRef, &ChainedHashMap::numberOfTuples);

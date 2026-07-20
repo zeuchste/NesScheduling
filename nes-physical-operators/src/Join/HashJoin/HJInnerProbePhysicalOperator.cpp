@@ -78,7 +78,19 @@ void HJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordBu
     const auto leftHashMapRefs = readValueFromMemRef<HashMap**>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::leftHashMaps));
     const auto rightHashMapRefs = readValueFromMemRef<HashMap**>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightHashMaps));
 
+    const auto rightPageStart
+        = readValueFromMemRef<uint64_t>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightPageStart));
+    const auto rightPageEnd = readValueFromMemRef<uint64_t>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightPageEnd));
+
     performMatchPairsProbe(
-        leftHashMapRefs, leftNumberOfHashMaps, rightHashMapRefs, rightNumberOfHashMaps, executionCtx, windowStart, windowEnd);
+        leftHashMapRefs,
+        leftNumberOfHashMaps,
+        rightHashMapRefs,
+        rightNumberOfHashMaps,
+        executionCtx,
+        windowStart,
+        windowEnd,
+        rightPageStart,
+        rightPageEnd);
 }
 }

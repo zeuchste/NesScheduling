@@ -81,11 +81,21 @@ public:
            JoinStorageVariant::PER_KEY_PAGED,
            "Storage layout of the hash-join build side "
            "[PER_KEY_PAGED|SHARED_CHAINS|FIXED_ARRAY]."};
-    EnumOption<JoinProcessingVariant> joinProcessing
-        = {"join_processing",
-           JoinProcessingVariant::SINGLE_TASK,
-           "Mapping of the hash-join probe work onto worker threads "
-           "[SINGLE_TASK|TASK_PER_PAIR|SHARED_TABLE|BROADCAST]."};
+    EnumOption<JoinBuildVariant> joinBuild
+        = {"join_build",
+           JoinBuildVariant::LOCAL_TABLES,
+           "Number of hash-join build tables per window side: one per worker thread or one shared "
+           "[LOCAL_TABLES|SHARED_TABLE]."};
+    EnumOption<JoinProbeVariant> joinProbe
+        = {"join_probe",
+           JoinProbeVariant::SINGLE_TASK,
+           "Granularity of the hash-join probe tasks "
+           "[SINGLE_TASK|TABLE_BROADCAST|TASK_PER_PAIR|BUCKET_RANGES]."};
+    UIntOption joinProbeRanges
+        = {"join_probe_ranges",
+           "0",
+           "Number of bucket-page ranges per table pair for the BUCKET_RANGES probe (0 = number of worker threads).",
+           {std::make_shared<NumberValidation>()}};
     EnumOption<JoinTriggerVariant> joinTrigger
         = {"join_trigger",
            JoinTriggerVariant::LAZY,
@@ -109,7 +119,9 @@ private:
             &maxNumberOfBuckets,
             &operatorBufferSize,
             &joinStorage,
-            &joinProcessing,
+            &joinBuild,
+            &joinProbe,
+            &joinProbeRanges,
             &joinTrigger,
             &joinFixedBuckets,
             &sliceCacheConfiguration};

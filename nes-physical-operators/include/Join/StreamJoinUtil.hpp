@@ -50,7 +50,7 @@ class PipelineExecutionContext;
 
 /// One unit of probe work for a triggered window, produced by a JoinTriggerStrategy.
 /// The join implementation's operator handler expands each work item into one or more probe
-/// task buffers (depending on the configured JoinProcessingVariant) and the sequence/chunk
+/// task buffers (depending on the configured JoinProbeVariant) and the sequence/chunk
 /// numbers are assigned centrally over all tasks of a window.
 struct ProbeWorkItem
 {

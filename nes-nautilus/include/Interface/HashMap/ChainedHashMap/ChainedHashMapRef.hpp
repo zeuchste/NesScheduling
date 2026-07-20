@@ -131,6 +131,12 @@ public:
     [[nodiscard]] EntryIterator begin() const;
     [[nodiscard]] EntryIterator end() const;
 
+    /// Iteration over the entries of the storage-page range [pageStart, pageEnd). pageEnd is clamped to the
+    /// number of pages, so (0, UINT64_MAX) iterates the whole map. Used by the BUCKET_RANGES probe variant
+    /// to split one table's probe across multiple tasks.
+    [[nodiscard]] EntryIterator beginRange(const nautilus::val<uint64_t>& pageStart, const nautilus::val<uint64_t>& pageEnd) const;
+    [[nodiscard]] EntryIterator endRange(const nautilus::val<uint64_t>& pageStart, const nautilus::val<uint64_t>& pageEnd) const;
+
     /// Always appends a new entry for the given record (no lookup/deduplication by key) and copies both the key
     /// and the value fields of the record into the entry. Used by the SHARED_CHAINS join storage variant, where
     /// every tuple is its own entry with the values inline.

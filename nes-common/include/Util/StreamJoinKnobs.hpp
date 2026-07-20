@@ -34,17 +34,28 @@ enum class JoinStorageVariant : uint8_t
     FIXED_ARRAY
 };
 
-/// The four processing variants (P1-P4): how the probe work of a window is mapped onto worker threads.
-enum class JoinProcessingVariant : uint8_t
+/// The building knob (B1/B2): how many build tables exist per window side, i.e., who writes the build state.
+enum class JoinBuildVariant : uint8_t
 {
-    /// P1 (default, current main): one probe task per window carrying all left x right hash maps.
+    /// B1 (default, current main): one table per worker thread and side; unsynchronized inserts.
+    LOCAL_TABLES,
+    /// B2: one table per side shared by all worker threads; synchronized inserts.
+    SHARED_TABLE
+};
+
+/// The probing knob (P1-P4): how the immutable window state is cut into probe tasks, ordered by granularity.
+enum class JoinProbeVariant : uint8_t
+{
+    /// P1 (default, current main): one probe task per window carrying all left x right tables.
     SINGLE_TASK,
-    /// P2: one probe task per (left map, right map) pair; the probe of one window scales with the cores.
+    /// P2: one probe task per left table, each carrying the full right side (replication-based broadcast).
+    TABLE_BROADCAST,
+    /// P3: one probe task per (left table, right table) pair.
     TASK_PER_PAIR,
-    /// P3: all threads build one shared hash table per window side; probe is a single task over the pair.
-    SHARED_TABLE,
-    /// P4: one probe task per left map, each carrying the full opposite side (replication-based broadcast).
-    BROADCAST
+    /// P4: one probe task per (pair, bucket-page range of the right table) - the finest granularity; the
+    /// only level that still parallelizes the probe under the SHARED_TABLE build, where the pair space
+    /// collapses to 1x1. Range count: join_probe_ranges (0 = number of worker threads).
+    BUCKET_RANGES
 };
 
 /// The two trigger variants (T1/T2): when join work happens.

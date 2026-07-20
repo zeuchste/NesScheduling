@@ -199,7 +199,9 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
     /// Unsupported settings degrade to the default with a warning instead of throwing: a throw here executes
     /// during query compilation on the deployed node and stalls the peers of the distributed plan.
     auto storageVariant = conf.joinStorage.getValue();
-    const auto processingVariant = conf.joinProcessing.getValue();
+    const auto buildVariant = conf.joinBuild.getValue();
+    const auto probeVariant = conf.joinProbe.getValue();
+    const auto probeRanges = conf.joinProbeRanges.getValue();
     if (conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER)
     {
         NES_WARNING("join_trigger=EAGER (T2) is not implemented yet; falling back to LAZY (T1).");
@@ -295,11 +297,13 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
         std::move(sliceAndWindowStore),
         conf.maxNumberOfBuckets,
         createTriggerStrategy(),
-        processingVariant,
+        buildVariant,
+        probeVariant,
+        probeRanges,
         fixedNumberOfBuckets);
 
     /// Creating the left and right hash join build operator
-    const auto sharedHashMap = processingVariant == JoinProcessingVariant::SHARED_TABLE;
+    const auto sharedHashMap = buildVariant == JoinBuildVariant::SHARED_TABLE;
     const HJBuildPhysicalOperator leftBuildOperator{
         handlerId,
         JoinBuildSideType::Left,
