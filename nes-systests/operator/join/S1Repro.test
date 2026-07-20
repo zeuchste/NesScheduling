@@ -1,0 +1,43 @@
+# name: join/S1Repro.test
+# description: Minimal two-level join regression test. Guards the per-side entry sizes of the hash-join slice:
+#              a join-of-join has different build-side value sizes, which corrupted inline (SHARED_CHAINS) entries
+#              when one shared size was used for both sides.
+# groups: [Join]
+
+CREATE LOGICAL SOURCE a(ida UINT64 NOT NULL, va UINT64 NOT NULL, ta UINT64 NOT NULL);
+CREATE PHYSICAL SOURCE FOR a TYPE File;
+ATTACH INLINE
+1,10,100
+2,20,200
+
+CREATE LOGICAL SOURCE b(idb UINT64 NOT NULL, vb UINT64 NOT NULL, tb UINT64 NOT NULL);
+CREATE PHYSICAL SOURCE FOR b TYPE File;
+ATTACH INLINE
+1,11,110
+2,21,210
+
+CREATE LOGICAL SOURCE c(idc UINT64 NOT NULL, vc UINT64 NOT NULL, tc UINT64 NOT NULL);
+CREATE PHYSICAL SOURCE FOR c TYPE File;
+ATTACH INLINE
+1,12,120
+2,22,220
+
+CREATE SINK sink1(start UINT64 NOT NULL, end UINT64 NOT NULL, ida UINT64 NOT NULL, va UINT64 NOT NULL, ta UINT64 NOT NULL, idb UINT64 NOT NULL, vb UINT64 NOT NULL, tb UINT64 NOT NULL) TYPE File;
+CREATE SINK sink2(start UINT64 NOT NULL, end UINT64 NOT NULL, start1 UINT64 NOT NULL, end1 UINT64 NOT NULL, ida UINT64 NOT NULL, va UINT64 NOT NULL, ta UINT64 NOT NULL, idb UINT64 NOT NULL, vb UINT64 NOT NULL, tb UINT64 NOT NULL, idc UINT64 NOT NULL, vc UINT64 NOT NULL, tc UINT64 NOT NULL) TYPE File;
+
+# Query 1 - single join (control)
+SELECT * FROM (SELECT * FROM a) INNER JOIN (SELECT * FROM b) ON ida = idb WINDOW TUMBLING (ta, tb, size 1 sec) INTO sink1;
+----
+0 1000 1 10 100 1 11 110
+0 1000 2 20 200 2 21 210
+
+# Query 2 - join of join
+SELECT * FROM (
+  SELECT * FROM (
+    SELECT start as start1, end as end1, ida, va, ta, idb, vb, tb
+    FROM (SELECT * FROM a) INNER JOIN (SELECT * FROM b) ON ida = idb WINDOW TUMBLING (ta, tb, size 1 sec)
+  ) INNER JOIN (SELECT * FROM c) ON ida = idc WINDOW TUMBLING (start1, tc, size 1 sec)
+) INTO sink2;
+----
+0 1000 0 1000 1 10 100 1 11 110 1 12 120
+0 1000 0 1000 2 20 200 2 21 210 2 22 220

@@ -31,10 +31,11 @@ namespace NES
 HJSlice::HJSlice(
     SliceStart sliceStart,
     SliceEnd sliceEnd,
-    const CreateNewHashMapSliceArgs& createNewHashMapSliceArgs,
+    const CreateNewHJSliceArgs& createNewHashMapSliceArgs,
     const uint64_t numberOfHashMaps,
     const bool preCreateHashMaps)
     : HashMapSlice(std::move(sliceStart), std::move(sliceEnd), createNewHashMapSliceArgs, numberOfHashMaps, 2)
+    , rightValueSize(createNewHashMapSliceArgs.rightValueSize)
 {
     if (preCreateHashMaps)
     {
@@ -76,12 +77,11 @@ HashMap* HJSlice::getHashMapPtrOrCreate(const WorkerThreadId workerThreadId, con
 
     if (hashMaps.at(pos) == nullptr)
     {
-        /// Hashmap at pos has not been initialized
+        /// Hashmap at pos has not been initialized. The two sides may have different value sizes (e.g., for the
+        /// SHARED_CHAINS storage variant, which stores the tuples inline), so the entry size is chosen per side.
+        const auto valueSize = buildSide == JoinBuildSideType::Right ? rightValueSize : createNewHashMapSliceArgs.valueSize;
         hashMaps.at(pos) = std::make_unique<ChainedHashMap>(
-            createNewHashMapSliceArgs.keySize,
-            createNewHashMapSliceArgs.valueSize,
-            createNewHashMapSliceArgs.numberOfBuckets,
-            createNewHashMapSliceArgs.pageSize);
+            createNewHashMapSliceArgs.keySize, valueSize, createNewHashMapSliceArgs.numberOfBuckets, createNewHashMapSliceArgs.pageSize);
     }
     return hashMaps.at(pos).get();
 }

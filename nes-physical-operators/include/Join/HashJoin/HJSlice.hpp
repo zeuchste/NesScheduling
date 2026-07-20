@@ -26,18 +26,25 @@ namespace NES
 
 struct CreateNewHJSliceArgs final : CreateNewHashMapSliceArgs
 {
+    /// The base keySize/valueSize describe the LEFT side; rightValueSize the RIGHT side. The sides always share the
+    /// same key layout (the lowering casts both sides' keys to identical types), but their value sizes differ as soon
+    /// as the storage variant stores the tuples inline (SHARED_CHAINS): each side then needs its own entry size.
     CreateNewHJSliceArgs(
         std::vector<std::shared_ptr<NautilusCleanupExec>> nautilusCleanup,
         const uint64_t keySize,
         const uint64_t valueSize,
+        const uint64_t rightValueSize,
         const uint64_t pageSize,
         const uint64_t numberOfBuckets,
         const JoinBuildSideType joinBuildSide)
-        : CreateNewHashMapSliceArgs{std::move(nautilusCleanup), keySize, valueSize, pageSize, numberOfBuckets}, joinBuildSide(joinBuildSide)
+        : CreateNewHashMapSliceArgs{std::move(nautilusCleanup), keySize, valueSize, pageSize, numberOfBuckets}
+        , rightValueSize(rightValueSize)
+        , joinBuildSide(joinBuildSide)
     {
     }
 
     ~CreateNewHJSliceArgs() override = default;
+    uint64_t rightValueSize;
     JoinBuildSideType joinBuildSide;
 };
 
@@ -52,12 +59,17 @@ public:
     HJSlice(
         SliceStart sliceStart,
         SliceEnd sliceEnd,
-        const CreateNewHashMapSliceArgs& createNewHashMapSliceArgs,
+        const CreateNewHJSliceArgs& createNewHashMapSliceArgs,
         uint64_t numberOfHashMaps,
         bool preCreateHashMaps = false);
     [[nodiscard]] HashMap* getHashMapPtr(WorkerThreadId workerThreadId, const JoinBuildSideType& buildSide) const;
     [[nodiscard]] HashMap* getHashMapPtrOrCreate(WorkerThreadId workerThreadId, const JoinBuildSideType& buildSide);
     [[nodiscard]] uint64_t getNumberOfHashMapsForSide() const;
+
+private:
+    /// Value size for right-side maps; the base createNewHashMapSliceArgs (stored sliced in HashMapSlice) keeps the
+    /// left side's sizes.
+    uint64_t rightValueSize;
 };
 
 }

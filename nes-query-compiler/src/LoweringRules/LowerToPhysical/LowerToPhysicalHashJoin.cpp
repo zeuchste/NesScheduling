@@ -355,13 +355,15 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
             auto& hjSlice = dynamic_cast<HJSlice&>(slice);
             return hjSlice.getHashMapPtrOrCreate(workerThreadId, JoinBuildSideType::Left);
         },
-        [hashMapOptions = leftHashMapOptions](WindowBasedOperatorHandler& handler, AbstractBufferProvider&)
+        [hashMapOptions = leftHashMapOptions, rightValueSize = rightHashMapOptions.valueSize](
+            WindowBasedOperatorHandler& handler, AbstractBufferProvider&)
         {
             auto& hjHandler = dynamic_cast<HJOperatorHandler&>(handler);
             const CreateNewHJSliceArgs hashMapSliceArgs{
                 hjHandler.getNautilusCleanupExec(),
                 hashMapOptions.keySize,
                 hashMapOptions.valueSize,
+                rightValueSize,
                 hashMapOptions.pageSize,
                 hashMapOptions.numberOfBuckets,
                 JoinBuildSideType::Left};
@@ -373,12 +375,15 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
             auto& hjSlice = dynamic_cast<HJSlice&>(slice);
             return hjSlice.getHashMapPtrOrCreate(workerThreadId, JoinBuildSideType::Right);
         },
-        [hashMapOptions = rightHashMapOptions](WindowBasedOperatorHandler& handler, AbstractBufferProvider&)
+        [hashMapOptions = rightHashMapOptions, leftValueSize = leftHashMapOptions.valueSize](
+            WindowBasedOperatorHandler& handler, AbstractBufferProvider&)
         {
             auto& hjHandler = dynamic_cast<HJOperatorHandler&>(handler);
+            /// keySize/valueSize describe the LEFT side, rightValueSize the right side (see CreateNewHJSliceArgs).
             const CreateNewHJSliceArgs hashMapSliceArgs{
                 hjHandler.getNautilusCleanupExec(),
                 hashMapOptions.keySize,
+                leftValueSize,
                 hashMapOptions.valueSize,
                 hashMapOptions.pageSize,
                 hashMapOptions.numberOfBuckets,
