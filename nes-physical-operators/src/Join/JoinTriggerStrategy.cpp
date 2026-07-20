@@ -16,65 +16,38 @@
 
 #include <memory>
 #include <vector>
-#include <Identifiers/Identifiers.hpp>
 #include <Join/StreamJoinUtil.hpp>
-#include <Sequencing/SequenceData.hpp>
 #include <SliceStore/Slice.hpp>
-#include <SliceStore/WindowSlicesStoreInterface.hpp>
 
 namespace NES
 {
 
-void InnerJoinTriggerStrategy::triggerWindow(
-    const std::vector<std::shared_ptr<Slice>>& allSlices,
-    const WindowInfoAndSequenceNumber& windowInfo,
-    const EmitSlicesFn& emitFn,
-    PipelineExecutionContext* pipelineCtx)
+std::vector<ProbeWorkItem> InnerJoinTriggerStrategy::collectProbeWorkItems(const std::vector<std::shared_ptr<Slice>>& allSlices)
 {
-    const auto totalChunks = allSlices.size() * allSlices.size();
-    ChunkNumber::Underlying chunkNumber = ChunkNumber::INITIAL;
-
+    std::vector<ProbeWorkItem> workItems;
+    workItems.reserve(allSlices.size() * allSlices.size());
     for (const auto& sliceLeft : allSlices)
     {
         for (const auto& sliceRight : allSlices)
         {
-            const bool isLastChunk = chunkNumber == totalChunks;
-            const SequenceData sequenceData{windowInfo.sequenceNumber, ChunkNumber(chunkNumber), isLastChunk};
-            emitFn({sliceLeft}, {sliceRight}, ProbeTaskType::MATCH_PAIRS, windowInfo.windowInfo, sequenceData, pipelineCtx);
-            ++chunkNumber;
+            workItems.emplace_back(ProbeWorkItem{{sliceLeft}, {sliceRight}, ProbeTaskType::MATCH_PAIRS});
         }
     }
+    return workItems;
 }
 
 template <bool EmitLeftNullFill, bool EmitRightNullFill>
-void OuterJoinTriggerStrategy<EmitLeftNullFill, EmitRightNullFill>::triggerWindow(
-    const std::vector<std::shared_ptr<Slice>>& allSlices,
-    const WindowInfoAndSequenceNumber& windowInfo,
-    const EmitSlicesFn& emitFn,
-    PipelineExecutionContext* pipelineCtx)
+std::vector<ProbeWorkItem>
+OuterJoinTriggerStrategy<EmitLeftNullFill, EmitRightNullFill>::collectProbeWorkItems(const std::vector<std::shared_ptr<Slice>>& allSlices)
 {
-    const auto numSlices = allSlices.size();
-    auto totalChunks = numSlices * numSlices;
-    if constexpr (EmitLeftNullFill)
-    {
-        totalChunks += numSlices;
-    }
-    if constexpr (EmitRightNullFill)
-    {
-        totalChunks += numSlices;
-    }
-
-    ChunkNumber::Underlying chunkNumber = ChunkNumber::INITIAL;
+    std::vector<ProbeWorkItem> workItems;
 
     /// 1) NxN MATCH_PAIRS — same as inner join
     for (const auto& sliceLeft : allSlices)
     {
         for (const auto& sliceRight : allSlices)
         {
-            const bool isLastChunk = chunkNumber == totalChunks;
-            const SequenceData sequenceData{windowInfo.sequenceNumber, ChunkNumber(chunkNumber), isLastChunk};
-            emitFn({sliceLeft}, {sliceRight}, ProbeTaskType::MATCH_PAIRS, windowInfo.windowInfo, sequenceData, pipelineCtx);
-            ++chunkNumber;
+            workItems.emplace_back(ProbeWorkItem{{sliceLeft}, {sliceRight}, ProbeTaskType::MATCH_PAIRS});
         }
     }
 
@@ -83,10 +56,7 @@ void OuterJoinTriggerStrategy<EmitLeftNullFill, EmitRightNullFill>::triggerWindo
     {
         for (const auto& slice : allSlices)
         {
-            const bool isLastChunk = chunkNumber == totalChunks;
-            const SequenceData sequenceData{windowInfo.sequenceNumber, ChunkNumber(chunkNumber), isLastChunk};
-            emitFn({slice}, allSlices, ProbeTaskType::LEFT_NULL_FILL, windowInfo.windowInfo, sequenceData, pipelineCtx);
-            ++chunkNumber;
+            workItems.emplace_back(ProbeWorkItem{{slice}, allSlices, ProbeTaskType::LEFT_NULL_FILL});
         }
     }
 
@@ -95,12 +65,11 @@ void OuterJoinTriggerStrategy<EmitLeftNullFill, EmitRightNullFill>::triggerWindo
     {
         for (const auto& slice : allSlices)
         {
-            const bool isLastChunk = chunkNumber == totalChunks;
-            const SequenceData sequenceData{windowInfo.sequenceNumber, ChunkNumber(chunkNumber), isLastChunk};
-            emitFn(allSlices, {slice}, ProbeTaskType::RIGHT_NULL_FILL, windowInfo.windowInfo, sequenceData, pipelineCtx);
-            ++chunkNumber;
+            workItems.emplace_back(ProbeWorkItem{allSlices, {slice}, ProbeTaskType::RIGHT_NULL_FILL});
         }
     }
+
+    return workItems;
 }
 
 /// Explicit instantiations for all used combinations

@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <Identifiers/Identifiers.hpp>
@@ -28,9 +29,21 @@
 namespace NES
 {
 HJSlice::HJSlice(
-    SliceStart sliceStart, SliceEnd sliceEnd, const CreateNewHashMapSliceArgs& createNewHashMapSliceArgs, const uint64_t numberOfHashMaps)
+    SliceStart sliceStart,
+    SliceEnd sliceEnd,
+    const CreateNewHashMapSliceArgs& createNewHashMapSliceArgs,
+    const uint64_t numberOfHashMaps,
+    const bool preCreateHashMaps)
     : HashMapSlice(std::move(sliceStart), std::move(sliceEnd), createNewHashMapSliceArgs, numberOfHashMaps, 2)
 {
+    if (preCreateHashMaps)
+    {
+        for (uint64_t i = 0; i < numberOfHashMaps; ++i)
+        {
+            std::ignore = getHashMapPtrOrCreate(WorkerThreadId(i), JoinBuildSideType::Left);
+            std::ignore = getHashMapPtrOrCreate(WorkerThreadId(i), JoinBuildSideType::Right);
+        }
+    }
 }
 
 HashMap* HJSlice::getHashMapPtr(const WorkerThreadId workerThreadId, const JoinBuildSideType& buildSide) const

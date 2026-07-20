@@ -25,6 +25,7 @@
 #include <Operators/Windows/WindowMetaData.hpp>
 #include <Runtime/Execution/OperatorHandler.hpp>
 #include <Time/Timestamp.hpp>
+#include <Util/StreamJoinKnobs.hpp>
 #include <ExecutionContext.hpp>
 #include <HashMapOptions.hpp>
 #include <val_arith.hpp>
@@ -51,7 +52,8 @@ public:
         std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout,
         std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
         HashMapOptions leftHashMapOptions,
-        HashMapOptions rightHashMapOptions);
+        HashMapOptions rightHashMapOptions,
+        JoinStorageVariant storageVariant = JoinStorageVariant::PER_KEY_PAGED);
 
 protected:
     /// Match-pairs probe: iterates all left hash maps against all right hash maps and emits joined records
@@ -67,8 +69,19 @@ protected:
     /// Builds a ChainedHashMapRef view over `hashMapPtr` using the key/value layout described by `options`.
     static ChainedHashMapRef makeChainedHashMapRef(const nautilus::val<HashMap*>& hashMapPtr, const HashMapOptions& options);
 
+    /// S1 (SHARED_CHAINS) probe: every entry is one tuple with the values inline; walk the opposite chain per entry.
+    void performSharedChainsMatchPairsProbe(
+        nautilus::val<HashMap**> leftHashMapRefs,
+        nautilus::val<uint64_t> leftNumberOfHashMaps,
+        nautilus::val<HashMap**> rightHashMapRefs,
+        nautilus::val<uint64_t> rightNumberOfHashMaps,
+        ExecutionContext& executionCtx,
+        const nautilus::val<Timestamp>& windowStart,
+        const nautilus::val<Timestamp>& windowEnd) const;
+
     std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout, rightTupleLayout;
     HashMapOptions leftHashMapOptions, rightHashMapOptions;
+    JoinStorageVariant storageVariant;
 };
 
 }

@@ -77,13 +77,17 @@ HJOperatorHandler::HJOperatorHandler(
     const OriginId outputOriginId,
     std::unique_ptr<WindowSlicesStoreInterface> sliceAndWindowStore,
     const uint64_t maxNumberOfBuckets,
-    JoinTriggerStrategy triggerStrategy)
+    JoinTriggerStrategy triggerStrategy,
+    const JoinProcessingVariant processingVariant,
+    const std::optional<uint64_t> fixedNumberOfBuckets)
     : StreamJoinOperatorHandler(inputOrigins, outputOriginId, std::move(sliceAndWindowStore), std::move(triggerStrategy))
     , setupAlreadyCalledLeft(false)
     , setupAlreadyCalledRight(false)
     , leftRollingAverageNumberOfKeys(RollingAverage<uint64_t>{100})
     , rightRollingAverageNumberOfKeys(RollingAverage<uint64_t>{100})
     , maxNumberOfBuckets(maxNumberOfBuckets)
+    , processingVariant(processingVariant)
+    , fixedNumberOfBuckets(fixedNumberOfBuckets)
 {
 }
 
@@ -94,22 +98,35 @@ HJOperatorHandler::getCreateNewSlicesFunction(const CreateNewSlicesArguments& ne
         numberOfWorkerThreads > 0, "Number of worker threads not set for window based operator. Has setWorkerThreads() being called?");
 
     auto newHashMapArgs = dynamic_cast<const CreateNewHJSliceArgs&>(newSlicesArguments);
-    switch (newHashMapArgs.joinBuildSide)
+    if (fixedNumberOfBuckets.has_value())
     {
-        case JoinBuildSideType::Left:
-            newHashMapArgs.numberOfBuckets = std::clamp(leftRollingAverageNumberOfKeys.rlock()->getAverage(), 1UL, maxNumberOfBuckets);
-            break;
-        case JoinBuildSideType::Right:
-            newHashMapArgs.numberOfBuckets = std::clamp(rightRollingAverageNumberOfKeys.rlock()->getAverage(), 1UL, maxNumberOfBuckets);
-            break;
+        /// S3 (FIXED_ARRAY): bucket array sized from the estimated key cardinality, no adaptive resizing.
+        newHashMapArgs.numberOfBuckets = *fixedNumberOfBuckets;
+    }
+    else
+    {
+        switch (newHashMapArgs.joinBuildSide)
+        {
+            case JoinBuildSideType::Left:
+                newHashMapArgs.numberOfBuckets = std::clamp(leftRollingAverageNumberOfKeys.rlock()->getAverage(), 1UL, maxNumberOfBuckets);
+                break;
+            case JoinBuildSideType::Right:
+                newHashMapArgs.numberOfBuckets
+                    = std::clamp(rightRollingAverageNumberOfKeys.rlock()->getAverage(), 1UL, maxNumberOfBuckets);
+                break;
+        }
     }
 
+    /// P3 (SHARED_TABLE): one hash map per side shared by all worker threads. The map is created eagerly in the
+    /// slice constructor so that no two threads race on its lazy creation.
+    const auto sharedTable = processingVariant == JoinProcessingVariant::SHARED_TABLE;
+    const auto numberOfHashMaps = sharedTable ? 1UL : numberOfWorkerThreads;
     return std::function(
-        [outputOriginId = outputOriginId, numberOfWorkerThreads = numberOfWorkerThreads, copyOfNewHashMapArgs = newHashMapArgs](
+        [outputOriginId = outputOriginId, numberOfHashMaps, sharedTable, copyOfNewHashMapArgs = newHashMapArgs](
             SliceStart sliceStart, SliceEnd sliceEnd) -> std::vector<std::shared_ptr<Slice>>
         {
             NES_TRACE("Creating new hash-join slice for slice {}-{} for output origin {}", sliceStart, sliceEnd, outputOriginId);
-            return {std::make_shared<HJSlice>(sliceStart, sliceEnd, copyOfNewHashMapArgs, numberOfWorkerThreads)};
+            return {std::make_shared<HJSlice>(sliceStart, sliceEnd, copyOfNewHashMapArgs, numberOfHashMaps, sharedTable)};
         });
 }
 
@@ -150,16 +167,15 @@ std::vector<std::shared_ptr<CreateNewHashMapSliceArgs::NautilusCleanupExec>> HJO
     return {leftCleanupStateNautilusFunction, rightCleanupStateNautilusFunction};
 }
 
-void HJOperatorHandler::emitSlicesToProbe(
-    const std::vector<std::shared_ptr<Slice>>& leftSlices,
-    const std::vector<std::shared_ptr<Slice>>& rightSlices,
-    ProbeTaskType probeTaskType,
+void HJOperatorHandler::createProbeTasks(
+    const ProbeWorkItem& workItem,
     const WindowInfo& windowInfo,
-    const SequenceData& sequenceData,
-    PipelineExecutionContext* pipelineCtx)
+    PipelineExecutionContext* pipelineCtx,
+    std::vector<TupleBuffer>& probeTasks)
 {
-    const auto leftHashMaps = getHashMapsFromSlices(leftSlices, JoinBuildSideType::Left);
-    const auto rightHashMaps = getHashMapsFromSlices(rightSlices, JoinBuildSideType::Right);
+    const auto probeTaskType = workItem.probeTaskType;
+    const auto leftHashMaps = getHashMapsFromSlices(workItem.leftSlices, JoinBuildSideType::Left);
+    const auto rightHashMaps = getHashMapsFromSlices(workItem.rightSlices, JoinBuildSideType::Right);
 
     /// Update rolling average (accumulate locally, single lock acquisition)
     {
@@ -189,37 +205,67 @@ void HJOperatorHandler::emitSlicesToProbe(
         }
     }
 
-    /// Creating a tuple buffer containing all necessary information for the probe
-    uint64_t totalNumberOfTuples = 0;
-    for (const auto* map : leftHashMaps)
+    /// Creates one probe task buffer over the given hash-map subsets; sequence/chunk data is stamped centrally
+    /// in StreamJoinOperatorHandler::triggerSlices.
+    const auto createTask = [&](const std::vector<HashMap*>& left, const std::vector<HashMap*>& right)
     {
-        totalNumberOfTuples += map->getNumberOfTuples();
-    }
-    for (const auto* map : rightHashMaps)
+        uint64_t totalNumberOfTuples = 0;
+        for (const auto* map : left)
+        {
+            totalNumberOfTuples += map->getNumberOfTuples();
+        }
+        for (const auto* map : right)
+        {
+            totalNumberOfTuples += map->getNumberOfTuples();
+        }
+
+        const auto neededBufferSize = sizeof(EmittedHJWindowTrigger) + ((left.size() + right.size()) * sizeof(HashMap*));
+        const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
+        if (not tupleBufferVal.has_value())
+        {
+            throw CannotAllocateBuffer("{}B for the hash join window trigger were requested", neededBufferSize);
+        }
+
+        auto tupleBuffer = tupleBufferVal.value();
+        tupleBuffer.setOriginId(outputOriginId);
+        tupleBuffer.setWatermark(windowInfo.windowStart);
+        tupleBuffer.setNumberOfTuples(totalNumberOfTuples);
+        tupleBuffer.setCreationTimestampInMS(Timestamp(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()));
+
+        new (tupleBuffer.getAvailableMemoryArea().data()) EmittedHJWindowTrigger{windowInfo, left, right, probeTaskType};
+        probeTasks.emplace_back(std::move(tupleBuffer));
+    };
+
+    /// Null-fill tasks are never split: deciding that a tuple has no match requires seeing ALL opposite maps.
+    /// P1 (SINGLE_TASK) and P3 (SHARED_TABLE, one map per side anyway) also emit exactly one task per work item.
+    const auto splittable = probeTaskType == ProbeTaskType::MATCH_PAIRS and not leftHashMaps.empty() and not rightHashMaps.empty();
+    switch (splittable ? processingVariant : JoinProcessingVariant::SINGLE_TASK)
     {
-        totalNumberOfTuples += map->getNumberOfTuples();
+        case JoinProcessingVariant::SINGLE_TASK:
+        case JoinProcessingVariant::SHARED_TABLE:
+            createTask(leftHashMaps, rightHashMaps);
+            break;
+        case JoinProcessingVariant::TASK_PER_PAIR:
+            /// P2: one probe task per (left map, right map) pair — the thread-local build maps provide the
+            /// partitioning for free and each pair is probed without shared state.
+            for (auto* leftMap : leftHashMaps)
+            {
+                for (auto* rightMap : rightHashMaps)
+                {
+                    createTask({leftMap}, {rightMap});
+                }
+            }
+            break;
+        case JoinProcessingVariant::BROADCAST:
+            /// P4: one probe task per left map, each carrying the full right side — content-insensitive work
+            /// division, immune to key skew, at a memory-bandwidth premium.
+            for (auto* leftMap : leftHashMaps)
+            {
+                createTask({leftMap}, rightHashMaps);
+            }
+            break;
     }
-
-    const auto neededBufferSize = sizeof(EmittedHJWindowTrigger) + ((leftHashMaps.size() + rightHashMaps.size()) * sizeof(HashMap*));
-    const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
-    if (not tupleBufferVal.has_value())
-    {
-        throw CannotAllocateBuffer("{}B for the hash join window trigger were requested", neededBufferSize);
-    }
-
-    auto tupleBuffer = tupleBufferVal.value();
-    tupleBuffer.setOriginId(outputOriginId);
-    tupleBuffer.setSequenceNumber(SequenceNumber(sequenceData.sequenceNumber));
-    tupleBuffer.setChunkNumber(ChunkNumber(sequenceData.chunkNumber));
-    tupleBuffer.setLastChunk(sequenceData.lastChunk);
-    tupleBuffer.setWatermark(windowInfo.windowStart);
-    tupleBuffer.setNumberOfTuples(totalNumberOfTuples);
-    tupleBuffer.setCreationTimestampInMS(Timestamp(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()));
-
-    new (tupleBuffer.getAvailableMemoryArea().data()) EmittedHJWindowTrigger{windowInfo, leftHashMaps, rightHashMaps, probeTaskType};
-
-    pipelineCtx->emitBuffer(tupleBuffer);
 }
 
 }

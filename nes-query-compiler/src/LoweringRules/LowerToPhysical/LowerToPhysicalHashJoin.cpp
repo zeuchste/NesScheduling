@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <string>
@@ -72,6 +73,7 @@
 #include <Util/Common.hpp>
 #include <Util/Logger/Logger.hpp>
 #include <Util/SchemaFactory.hpp>
+#include <Util/StreamJoinKnobs.hpp>
 #include <Watermark/TimeFunction.hpp>
 #include <WindowTypes/Measures/TimeCharacteristic.hpp>
 #include <WindowTypes/Types/TimeBasedWindowType.hpp>
@@ -225,10 +227,10 @@ std::pair<Schema<QualifiedUnboundField, Ordered>, std::vector<std::shared_ptr<Ph
 HashMapOptions createHashMapOptions(
     std::vector<FieldNamesExtension>& joinFieldExtensions,
     Schema<QualifiedUnboundField, Ordered>& inputSchema,
-    const QueryExecutionConfiguration& conf)
+    const QueryExecutionConfiguration& conf,
+    const JoinStorageVariant storageVariant)
 {
     uint64_t keySize = 0;
-    constexpr auto valueSize = sizeof(PagedVector);
     std::vector<PhysicalFunction> keyFunctions;
     std::vector<QualifiedIdentifier> fieldKeyNames;
     for (auto& fieldExtension : joinFieldExtensions)
@@ -238,13 +240,33 @@ HashMapOptions createHashMapOptions(
         fieldKeyNames.emplace_back(fieldExtension.newField.getFullyQualifiedName());
     }
 
+    /// S2/S3 store a per-key PagedVector as the entry value; S1 (SHARED_CHAINS) stores the non-key record
+    /// fields inline in the entry, so every tuple becomes its own entry on the shared entry pages.
+    uint64_t valueSize = 0;
+    std::vector<QualifiedIdentifier> fieldValueNames;
+    if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
+    {
+        for (const auto& field : inputSchema)
+        {
+            if (std::ranges::find(fieldKeyNames, field.getFullyQualifiedName()) == fieldKeyNames.end())
+            {
+                valueSize += field.getDataType().getSizeInBytesWithNull();
+                fieldValueNames.emplace_back(field.getFullyQualifiedName());
+            }
+        }
+    }
+    else
+    {
+        valueSize = sizeof(PagedVector);
+    }
+
     const auto pageSize = conf.pageSize.getValue();
-    const auto numberOfBuckets = conf.numberOfPartitions.getValue();
+    const auto numberOfBuckets
+        = storageVariant == JoinStorageVariant::FIXED_ARRAY ? conf.joinFixedBuckets.getValue() : conf.numberOfPartitions.getValue();
     const auto entrySize = sizeof(ChainedHashMapEntry) + keySize + valueSize;
     const auto entriesPerPage = pageSize / entrySize;
 
-    /// As we are using a paged vector for the value, we do not need to set the fieldNameValues for the chained hashmap
-    const auto& [fieldKeys, fieldValues] = ChainedEntryMemoryProvider::createFieldOffsets(inputSchema, fieldKeyNames, {});
+    const auto& [fieldKeys, fieldValues] = ChainedEntryMemoryProvider::createFieldOffsets(inputSchema, fieldKeyNames, fieldValueNames);
     HashMapOptions hashMapOptions{
         std::make_unique<MurMur3HashFunction>(),
         std::move(keyFunctions),
@@ -301,6 +323,18 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
                                     })
         | std::views::join | std::ranges::to<std::vector<OriginId>>();
 
+    /// Design-space knobs of the join: storage (S1-S3), processing (P1-P4), and trigger (T1/T2).
+    const auto storageVariant = conf.joinStorage.getValue();
+    const auto processingVariant = conf.joinProcessing.getValue();
+    if (conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER)
+    {
+        throw UnknownJoinStrategy("The EAGER join trigger variant (T2) is not implemented yet; configure join_trigger=LAZY.");
+    }
+    if (storageVariant == JoinStorageVariant::SHARED_CHAINS and isOuterJoin(join->getJoinType()))
+    {
+        throw UnknownJoinStrategy("The SHARED_CHAINS join storage variant (S1) supports inner joins only.");
+    }
+
     /// Our current hash join implementation uses a hash table that requires each key to be 100% identical in terms of no. fields and data types.
     /// Therefore, we need to create map operators that extend and cast the fields to the correct data types.
     auto [leftJoinFields, rightJoinFields] = getJoinFieldExtensionsLeftRight(leftOperator, rightOperator, logicalJoinFunction);
@@ -308,8 +342,8 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
     auto [newRightInputSchema, rightMapOperators] = addMapOperators(rightOperator, rightJoinFields, memoryLayoutType);
     auto leftTupleLayout = std::make_shared<DefaultPagedVectorTupleLayout>(newLeftInputSchema);
     auto rightTupleLayout = std::make_shared<DefaultPagedVectorTupleLayout>(newRightInputSchema);
-    auto leftHashMapOptions = createHashMapOptions(leftJoinFields, newLeftInputSchema, conf);
-    auto rightHashMapOptions = createHashMapOptions(rightJoinFields, newRightInputSchema, conf);
+    auto leftHashMapOptions = createHashMapOptions(leftJoinFields, newLeftInputSchema, conf, storageVariant);
+    auto rightHashMapOptions = createHashMapOptions(rightJoinFields, newRightInputSchema, conf, storageVariant);
 
     /// Creating the hash join operator handler and slice store
     auto handlerId = getNextOperatorHandlerId();
@@ -371,24 +405,39 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
         std::unreachable();
     };
 
+    /// S3 (FIXED_ARRAY): fix the bucket-array size to the estimated key cardinality, disabling adaptive sizing.
+    const auto fixedNumberOfBuckets = storageVariant == JoinStorageVariant::FIXED_ARRAY
+        ? std::optional<uint64_t>{conf.joinFixedBuckets.getValue()}
+        : std::nullopt;
     auto handler = std::make_shared<HJOperatorHandler>(
-        inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), conf.maxNumberOfBuckets, createTriggerStrategy());
+        inputOriginIds,
+        outputOriginId,
+        std::move(sliceAndWindowStore),
+        conf.maxNumberOfBuckets,
+        createTriggerStrategy(),
+        processingVariant,
+        fixedNumberOfBuckets);
 
     /// Creating the left and right hash join build operator
+    const auto sharedHashMap = processingVariant == JoinProcessingVariant::SHARED_TABLE;
     const HJBuildPhysicalOperator leftBuildOperator{
         handlerId,
         JoinBuildSideType::Left,
         TimeFunction::create(timeStampFieldLeft),
         leftTupleLayout,
         leftHashMapOptions,
-        std::move(sliceStoreRefLeft)};
+        std::move(sliceStoreRefLeft),
+        storageVariant,
+        sharedHashMap};
     const HJBuildPhysicalOperator rightBuildOperator{
         handlerId,
         JoinBuildSideType::Right,
         TimeFunction::create(timeStampFieldRight),
         rightTupleLayout,
         rightHashMapOptions,
-        std::move(sliceStoreRefRight)};
+        std::move(sliceStoreRefRight),
+        storageVariant,
+        sharedHashMap};
 
     /// Creating the hash join probe — select inner or outer probe based on join type
     auto joinSchema = JoinSchema(newLeftInputSchema, newRightInputSchema, physicalOutputSchema);
@@ -459,7 +508,8 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
             leftTupleLayout,
             rightTupleLayout,
             leftHashMapOptions,
-            rightHashMapOptions));
+            rightHashMapOptions,
+            storageVariant));
     }
 
     std::shared_ptr<PhysicalOperatorWrapper> leftLeaf = leftBuildWrapper;

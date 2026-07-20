@@ -19,8 +19,10 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
+#include <Util/StreamJoinKnobs.hpp>
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/HashMap/HashMap.hpp>
 #include <Join/StreamJoinOperatorHandler.hpp>
@@ -75,7 +77,9 @@ public:
         OriginId outputOriginId,
         std::unique_ptr<WindowSlicesStoreInterface> sliceAndWindowStore,
         uint64_t maxNumberOfBuckets,
-        JoinTriggerStrategy triggerStrategy);
+        JoinTriggerStrategy triggerStrategy,
+        JoinProcessingVariant processingVariant = JoinProcessingVariant::SINGLE_TASK,
+        std::optional<uint64_t> fixedNumberOfBuckets = std::nullopt);
 
     [[nodiscard]] std::function<std::vector<std::shared_ptr<Slice>>(SliceStart, SliceEnd)>
     getCreateNewSlicesFunction(const CreateNewSlicesArguments& newSlicesArguments) const override;
@@ -93,17 +97,20 @@ private:
     std::shared_ptr<CreateNewHashMapSliceArgs::NautilusCleanupExec> leftCleanupStateNautilusFunction;
     std::shared_ptr<CreateNewHashMapSliceArgs::NautilusCleanupExec> rightCleanupStateNautilusFunction;
 
-    void emitSlicesToProbe(
-        const std::vector<std::shared_ptr<Slice>>& leftSlices,
-        const std::vector<std::shared_ptr<Slice>>& rightSlices,
-        ProbeTaskType probeTaskType,
+    void createProbeTasks(
+        const ProbeWorkItem& workItem,
         const WindowInfo& windowInfo,
-        const SequenceData& sequenceData,
-        PipelineExecutionContext* pipelineCtx) override;
+        PipelineExecutionContext* pipelineCtx,
+        std::vector<TupleBuffer>& probeTasks) override;
 
     folly::Synchronized<RollingAverage<uint64_t>> leftRollingAverageNumberOfKeys;
     folly::Synchronized<RollingAverage<uint64_t>> rightRollingAverageNumberOfKeys;
     uint64_t maxNumberOfBuckets;
+    /// P1-P4: granularity of the probe tasks created per work item (and, for SHARED_TABLE, one map per side).
+    JoinProcessingVariant processingVariant;
+    /// S3 (FIXED_ARRAY): fixed bucket-array size from the estimated key cardinality; disables the
+    /// rolling-average-based adaptive sizing.
+    std::optional<uint64_t> fixedNumberOfBuckets;
 };
 
 }

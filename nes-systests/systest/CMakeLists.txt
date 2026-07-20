@@ -171,6 +171,26 @@ if (NOT CODE_COVERAGE)
     endforeach ()
 endif (NOT CODE_COVERAGE)
 
+## Design-space matrix for the hash-join knobs (storage S1-S3 x processing P1-P4, lazy trigger):
+## runs the Join test group once per combination; the golden results must be identical across all of them.
+if (NOT CODE_COVERAGE)
+    foreach (joinStorage IN ITEMS PER_KEY_PAGED SHARED_CHAINS FIXED_ARRAY)
+        foreach (joinProcessing IN ITEMS SINGLE_TASK TASK_PER_PAIR SHARED_TABLE BROADCAST)
+            ExternalData_Add_Test(test-data
+                    NAME systest_join_knobs_${joinStorage}_${joinProcessing}
+                    COMMAND systest -n 6 --show-query-performance --groups Join --exclude-groups ${SYSTEST_EXCLUDE_GROUPS} --workingDir=${CMAKE_CURRENT_BINARY_DIR}/knobs_${joinStorage}_${joinProcessing} --data ${EXPANDED_TEST_DATA_PATH}
+                    --optimizer join_strategy=HASH_JOIN
+                    --
+                    --worker.query_engine.number_of_worker_threads=4
+                    --worker.default_query_execution.execution_mode=INTERPRETER
+                    --worker.number_of_buffers_in_global_buffer_manager=20000
+                    --worker.default_query_execution.join_storage=${joinStorage}
+                    --worker.default_query_execution.join_processing=${joinProcessing})
+            set_tests_properties(systest_join_knobs_${joinStorage}_${joinProcessing} PROPERTIES LABELS "Systest;JoinKnobs" PROCESSORS 4)
+        endforeach ()
+    endforeach ()
+endif (NOT CODE_COVERAGE)
+
 # Adding dependency for the nes-systest-lib so that the data is downloaded before the tests are run
 ExternalData_Add_Target(test-data)
 add_dependencies(nes-systest-lib test-data)

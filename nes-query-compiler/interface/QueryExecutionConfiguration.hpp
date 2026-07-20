@@ -25,6 +25,7 @@
 #include <Configurations/Validation/FloatValidation.hpp>
 #include <Configurations/Validation/NumberValidation.hpp>
 #include <Util/ExecutionMode.hpp>
+#include <Util/StreamJoinKnobs.hpp>
 #include <SliceCacheConfiguration.hpp>
 
 namespace NES
@@ -35,6 +36,7 @@ static constexpr auto DEFAULT_PAGED_VECTOR_SIZE = 1024;
 static constexpr auto DEFAULT_OPERATOR_BUFFER_SIZE = 4096;
 static constexpr auto DEFAULT_NUMBER_OF_RECORDS_PER_KEY = 10;
 static constexpr auto DEFAULT_MAX_NUMBER_OF_BUCKETS = 10'000.0;
+static constexpr auto DEFAULT_JOIN_FIXED_BUCKETS = 1024;
 
 class QueryExecutionConfiguration : public BaseConfiguration
 {
@@ -73,6 +75,27 @@ public:
            "Buffer size of a operator e.g. during scan",
            {std::make_shared<NumberValidation>()}};
 
+    /// Design-space knobs for the stream hash join (storage S1-S3, processing P1-P4, trigger T1/T2).
+    EnumOption<JoinStorageVariant> joinStorage
+        = {"join_storage",
+           JoinStorageVariant::PER_KEY_PAGED,
+           "Storage layout of the hash-join build side "
+           "[PER_KEY_PAGED|SHARED_CHAINS|FIXED_ARRAY]."};
+    EnumOption<JoinProcessingVariant> joinProcessing
+        = {"join_processing",
+           JoinProcessingVariant::SINGLE_TASK,
+           "Mapping of the hash-join probe work onto worker threads "
+           "[SINGLE_TASK|TASK_PER_PAIR|SHARED_TABLE|BROADCAST]."};
+    EnumOption<JoinTriggerVariant> joinTrigger
+        = {"join_trigger",
+           JoinTriggerVariant::LAZY,
+           "When join work happens [LAZY|EAGER]. EAGER is not implemented yet."};
+    UIntOption joinFixedBuckets
+        = {"join_fixed_buckets",
+           std::to_string(DEFAULT_JOIN_FIXED_BUCKETS),
+           "Estimated key cardinality used to size the fixed bucket array of the FIXED_ARRAY join storage variant.",
+           {std::make_shared<NumberValidation>()}};
+
     SliceCacheConfiguration sliceCacheConfiguration = {"slice_cache", "Configuration for the slice cache"};
 
 private:
@@ -85,6 +108,10 @@ private:
             &numberOfRecordsPerKey,
             &maxNumberOfBuckets,
             &operatorBufferSize,
+            &joinStorage,
+            &joinProcessing,
+            &joinTrigger,
+            &joinFixedBuckets,
             &sliceCacheConfiguration};
     }
 };

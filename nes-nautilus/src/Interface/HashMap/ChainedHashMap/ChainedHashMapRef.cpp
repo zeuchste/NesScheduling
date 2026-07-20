@@ -233,6 +233,41 @@ nautilus::val<AbstractHashMapEntry*> ChainedHashMapRef::findOrCreateEntry(
     return castedEntryRef;
 }
 
+nautilus::val<AbstractHashMapEntry*> ChainedHashMapRef::insertEntry(
+    const Record& record, const HashFunction& hashFunction, const nautilus::val<AbstractBufferProvider*>& bufferProvider)
+{
+    std::vector<VarVal> keyValues;
+    for (const auto& [fieldIdentifier, type, fieldOffset] : nautilus::static_iterable(fieldKeys))
+    {
+        keyValues.emplace_back(record.read(fieldIdentifier));
+    }
+
+    const auto hashValue = hashFunction.calculate(keyValues);
+    const auto newEntryRef = ChainedEntryRef{insert(hashValue, bufferProvider), hashMapRef, fieldKeys, fieldValues};
+    newEntryRef.copyKeysToEntry(record, bufferProvider);
+    newEntryRef.copyValuesToEntry(record, bufferProvider);
+    return static_cast<nautilus::val<AbstractHashMapEntry*>>(newEntryRef.entryRef);
+}
+
+void ChainedHashMapRef::forEachMatchingEntry(
+    const nautilus::val<ChainedHashMapEntry*>& probeEntry, const std::function<void(const ChainedEntryRef&)>& fn) const
+{
+    /// Reinterpreting the probe entry's memory with this map's field offsets: the key layout is identical across
+    /// both join sides (enforced by the cast/extension machinery in the lowering), only the labels differ.
+    const ChainedEntryRef probeEntryRef(probeEntry, hashMapRef, fieldKeys, fieldValues);
+    const auto probeKeys = probeEntryRef.getKey();
+    auto entry = findChain(probeEntryRef.getHash());
+    while (entry != nullptr)
+    {
+        const ChainedEntryRef entryRef(entry, hashMapRef, fieldKeys, fieldValues);
+        if (compareKeys(entryRef, probeKeys))
+        {
+            fn(entryRef);
+        }
+        entry = entryRef.getNext();
+    }
+}
+
 void ChainedHashMapRef::insertOrUpdateEntry(
     const nautilus::val<AbstractHashMapEntry*>& otherEntry,
     const std::function<void(nautilus::val<AbstractHashMapEntry*>&)>& onUpdate,

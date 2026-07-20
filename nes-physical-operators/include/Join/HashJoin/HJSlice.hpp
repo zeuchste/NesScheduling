@@ -46,8 +46,15 @@ struct CreateNewHJSliceArgs final : CreateNewHashMapSliceArgs
 class HJSlice final : public HashMapSlice
 {
 public:
+    /// If preCreateHashMaps is set, all hash maps are created eagerly in the constructor. This is required for the
+    /// SHARED_TABLE processing variant (one map per side shared by all worker threads), where lazy creation would
+    /// race between the building threads.
     HJSlice(
-        SliceStart sliceStart, SliceEnd sliceEnd, const CreateNewHashMapSliceArgs& createNewHashMapSliceArgs, uint64_t numberOfHashMaps);
+        SliceStart sliceStart,
+        SliceEnd sliceEnd,
+        const CreateNewHashMapSliceArgs& createNewHashMapSliceArgs,
+        uint64_t numberOfHashMaps,
+        bool preCreateHashMaps = false);
     [[nodiscard]] HashMap* getHashMapPtr(WorkerThreadId workerThreadId, const JoinBuildSideType& buildSide) const;
     [[nodiscard]] HashMap* getHashMapPtrOrCreate(WorkerThreadId workerThreadId, const JoinBuildSideType& buildSide);
     [[nodiscard]] uint64_t getNumberOfHashMapsForSide() const;

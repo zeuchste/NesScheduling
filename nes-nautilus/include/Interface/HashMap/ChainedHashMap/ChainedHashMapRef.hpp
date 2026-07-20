@@ -131,6 +131,18 @@ public:
     [[nodiscard]] EntryIterator begin() const;
     [[nodiscard]] EntryIterator end() const;
 
+    /// Always appends a new entry for the given record (no lookup/deduplication by key) and copies both the key
+    /// and the value fields of the record into the entry. Used by the SHARED_CHAINS join storage variant, where
+    /// every tuple is its own entry with the values inline.
+    nautilus::val<AbstractHashMapEntry*>
+    insertEntry(const Record& record, const HashFunction& hashFunction, const nautilus::val<AbstractBufferProvider*>& bufferProvider);
+
+    /// Walks the chain of the probe entry's hash and calls fn for EVERY entry whose keys match — in contrast to
+    /// findEntry(), which returns only the first match. The probe entry may belong to a different map with the
+    /// same key layout (its memory is reinterpreted with this map's field offsets).
+    void forEachMatchingEntry(
+        const nautilus::val<ChainedHashMapEntry*>& probeEntry, const std::function<void(const ChainedEntryRef&)>& fn) const;
+
 
 private:
     /// Finds the chain for the given hash value. If no chain exists, it returns nullptr.

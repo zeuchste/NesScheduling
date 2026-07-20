@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <utility>
 #include <vector>
@@ -96,6 +97,12 @@ public:
     /// Creates a new chained hash map with the same configuration, i.e., pageSize, entrySize, entriesPerPage and numberOfChains
     static std::unique_ptr<ChainedHashMap> createNewMapWithSameConfiguration(const ChainedHashMap& other);
 
+    /// Serializes inserts for the SHARED_TABLE join processing variant, where all worker threads build into one map.
+    /// The map itself stays unsynchronized on every other path.
+    /// ponytail: coarse per-map mutex around the whole insert; CAS-based bucket heads if contention matters.
+    void lockForSharedInsert() { sharedInsertMutex.lock(); }
+    void unlockAfterSharedInsert() { sharedInsertMutex.unlock(); }
+
 private:
     friend class ChainedHashMapRef;
 
@@ -112,5 +119,6 @@ private:
     ChainedHashMapEntry** entries; /// Stores the pointers to the first entry in each chain
     HashFunction::HashValue::raw_type mask; /// Mask to calculate the bucket position from the hash value. Always a (power of 2)-1
     std::function<void(ChainedHashMapEntry*)> destructorCallBack; /// Callback function to be executed, once the destructor is called
+    std::mutex sharedInsertMutex; /// Only used by the SHARED_TABLE join processing variant; see lockForSharedInsert()
 };
 }

@@ -44,12 +44,14 @@ HJProbePhysicalOperatorBase::HJProbePhysicalOperatorBase(
     std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout,
     std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
     HashMapOptions leftHashMapOptions,
-    HashMapOptions rightHashMapOptions)
+    HashMapOptions rightHashMapOptions,
+    const JoinStorageVariant storageVariant)
     : StreamJoinProbePhysicalOperator(operatorHandlerId, std::move(joinFunction), std::move(windowMetaData), std::move(joinSchema))
     , leftTupleLayout(std::move(leftTupleLayout))
     , rightTupleLayout(std::move(rightTupleLayout))
     , leftHashMapOptions(std::move(leftHashMapOptions))
     , rightHashMapOptions(std::move(rightHashMapOptions))
+    , storageVariant(storageVariant)
 {
 }
 
@@ -71,6 +73,13 @@ void HJProbePhysicalOperatorBase::performMatchPairsProbe(
 {
     if (leftNumberOfHashMaps == 0 or rightNumberOfHashMaps == 0)
     {
+        return;
+    }
+
+    if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
+    {
+        performSharedChainsMatchPairsProbe(
+            leftHashMapRefs, leftNumberOfHashMaps, rightHashMapRefs, rightNumberOfHashMaps, executionCtx, windowStart, windowEnd);
         return;
     }
 
@@ -116,6 +125,60 @@ void HJProbePhysicalOperatorBase::performMatchPairsProbe(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+namespace
+{
+/// S1 stores the key fields only in the entry's key region; the value region holds the remaining fields.
+/// Reconstructs the full record by merging both regions.
+Record reconstructRecordFromEntry(const ChainedHashMapRef::ChainedEntryRef& entryRef, const HashMapOptions& options)
+{
+    auto record = entryRef.getValue();
+    for (const auto& field : options.fieldKeys)
+    {
+        record.write(field.fieldIdentifier, entryRef.getKey(field.fieldIdentifier));
+    }
+    return record;
+}
+}
+
+void HJProbePhysicalOperatorBase::performSharedChainsMatchPairsProbe(
+    nautilus::val<HashMap**> leftHashMapRefs,
+    nautilus::val<uint64_t> leftNumberOfHashMaps,
+    nautilus::val<HashMap**> rightHashMapRefs,
+    nautilus::val<uint64_t> rightNumberOfHashMaps,
+    ExecutionContext& executionCtx,
+    const nautilus::val<Timestamp>& windowStart,
+    const nautilus::val<Timestamp>& windowEnd) const
+{
+    const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
+    const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
+
+    for (nautilus::val<uint64_t> leftHashMapIndex = 0; leftHashMapIndex < leftNumberOfHashMaps; ++leftHashMapIndex)
+    {
+        const nautilus::val<HashMap*> leftHashMapPtr = leftHashMapRefs[leftHashMapIndex];
+        ChainedHashMapRef leftHashMap = makeChainedHashMapRef(leftHashMapPtr, leftHashMapOptions);
+        for (nautilus::val<uint64_t> rightHashMapIndex = 0; rightHashMapIndex < rightNumberOfHashMaps; ++rightHashMapIndex)
+        {
+            const nautilus::val<HashMap*> rightHashMapPtr = rightHashMapRefs[rightHashMapIndex];
+            const ChainedHashMapRef rightHashMap = makeChainedHashMapRef(rightHashMapPtr, rightHashMapOptions);
+            for (const auto rightEntry : rightHashMap)
+            {
+                const ChainedHashMapRef::ChainedEntryRef rightEntryRef{
+                    rightEntry, rightHashMapPtr, rightHashMapOptions.fieldKeys, rightHashMapOptions.fieldValues};
+                const auto rightRecord = reconstructRecordFromEntry(rightEntryRef, rightHashMapOptions);
+
+                leftHashMap.forEachMatchingEntry(
+                    rightEntry,
+                    [&](const ChainedHashMapRef::ChainedEntryRef& leftEntryRef)
+                    {
+                        const auto leftRecord = reconstructRecordFromEntry(leftEntryRef, leftHashMapOptions);
+                        auto joinedRecord = createJoinedRecord(leftRecord, rightRecord, windowStart, windowEnd, leftFields, rightFields);
+                        executeChild(executionCtx, joinedRecord);
+                    });
             }
         }
     }
