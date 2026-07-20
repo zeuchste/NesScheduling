@@ -61,6 +61,20 @@ resolveLoweringRule(const LogicalOperator& logicalOperator, const LoweringRuleRe
                 }
                 throw UnknownOptimizerRule("Lowering rule for logical operator '{}' can't be resolved", logicalOperator.getName());
             }
+            case JoinImplementation::SORT_MERGE_JOIN: {
+                if (auto ruleOptional = LoweringRuleRegistry::instance().create(std::string("SortMergeJoin"), registryArgument))
+                {
+                    return std::move(ruleOptional.value());
+                }
+                throw UnknownOptimizerRule("Lowering rule for logical operator '{}' can't be resolved", logicalOperator.getName());
+            }
+            case JoinImplementation::INDEX_JOIN: {
+                if (auto ruleOptional = LoweringRuleRegistry::instance().create(std::string("IndexJoin"), registryArgument))
+                {
+                    return std::move(ruleOptional.value());
+                }
+                throw UnknownOptimizerRule("Lowering rule for logical operator '{}' can't be resolved", logicalOperator.getName());
+            }
             case JoinImplementation::CHOICELESS: {
                 throw UnknownOptimizerRule("ImplementationTrait cannot be choiceless for join", logicalOperator.getName());
             }

@@ -89,7 +89,7 @@ if (CODE_COVERAGE)
 endif (CODE_COVERAGE)
 
 # If we are running code coverage, we need to ONLY run the interpreter tests, as otherwise, the code coverage will be 100% for all operators as the compiler traces all branches and operations.
-set(joinStrategies NESTED_LOOP_JOIN HASH_JOIN)
+set(joinStrategies NESTED_LOOP_JOIN HASH_JOIN SORT_MERGE_JOIN INDEX_JOIN)
 # The systest_interpreter and _compiler pass quite quickly, thus, we run them w/ and w/o a slice cache (if ALL_SLICE_CACHE_TESTS is ON)
 foreach (enableSliceCache IN LISTS sliceCacheValues)
     foreach (joinStrategy IN LISTS joinStrategies)
@@ -139,7 +139,7 @@ if (NOT CODE_COVERAGE)
     ## We run all join and aggregation tests with different no. worker threads, different join strategies, and with and w/o slice cache (if ALL_SLICE_CACHE_TESTS is ON)
     foreach (enableSliceCache IN LISTS sliceCacheValues)
         foreach (workerThreads IN ITEMS 1 2 4)
-            foreach (joinStrategy IN ITEMS NESTED_LOOP_JOIN HASH_JOIN)
+            foreach (joinStrategy IN ITEMS NESTED_LOOP_JOIN HASH_JOIN SORT_MERGE_JOIN INDEX_JOIN)
                 ExternalData_Add_Test(test-data
                         NAME systest_join_${workerThreads}_${joinStrategy}_sliceCache_${enableSliceCache}_interpreter
                         COMMAND systest -n 6 --show-query-performance --groups Join --exclude-groups ${SYSTEST_EXCLUDE_GROUPS} --workingDir=${CMAKE_CURRENT_BINARY_DIR}/${workerThreads}_${joinStrategy}_sliceCache_${enableSliceCache}_interpreter_join --data ${EXPANDED_TEST_DATA_PATH}

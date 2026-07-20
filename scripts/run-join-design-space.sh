@@ -57,6 +57,12 @@ mkdir -p "$WORKDIR_BASE"
 ## A3 baseline: nested-loop join
 run_config "NESTED_LOOP_JOIN" NESTED_LOOP_JOIN
 
+## A2: sort-merge join (trigger-time sort by key hash, merge probe)
+run_config "SORT_MERGE_JOIN" SORT_MERGE_JOIN
+
+## A4: index join (shared, incrementally maintained ordered index)
+run_config "INDEX_JOIN" INDEX_JOIN
+
 ## A1: hash join, storage x processing matrix (lazy trigger)
 for storage in PER_KEY_PAGED SHARED_CHAINS FIXED_ARRAY; do
     for processing in SINGLE_TASK TASK_PER_PAIR SHARED_TABLE BROADCAST; do
