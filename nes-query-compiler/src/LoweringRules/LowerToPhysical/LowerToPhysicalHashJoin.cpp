@@ -324,15 +324,18 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
         | std::views::join | std::ranges::to<std::vector<OriginId>>();
 
     /// Design-space knobs of the join: storage (S1-S3), processing (P1-P4), and trigger (T1/T2).
-    const auto storageVariant = conf.joinStorage.getValue();
+    /// Unsupported settings degrade to the default with a warning instead of throwing: a throw here executes
+    /// during query compilation on the deployed node and stalls the peers of the distributed plan.
+    auto storageVariant = conf.joinStorage.getValue();
     const auto processingVariant = conf.joinProcessing.getValue();
     if (conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER)
     {
-        throw UnknownJoinStrategy("The EAGER join trigger variant (T2) is not implemented yet; configure join_trigger=LAZY.");
+        NES_WARNING("join_trigger=EAGER (T2) is not implemented yet; falling back to LAZY (T1).");
     }
     if (storageVariant == JoinStorageVariant::SHARED_CHAINS and isOuterJoin(join->getJoinType()))
     {
-        throw UnknownJoinStrategy("The SHARED_CHAINS join storage variant (S1) supports inner joins only.");
+        NES_WARNING("join_storage=SHARED_CHAINS (S1) supports inner joins only; falling back to PER_KEY_PAGED (S2) for this join.");
+        storageVariant = JoinStorageVariant::PER_KEY_PAGED;
     }
 
     /// Our current hash join implementation uses a hash table that requires each key to be 100% identical in terms of no. fields and data types.
