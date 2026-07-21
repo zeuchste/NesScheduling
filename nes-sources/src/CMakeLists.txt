@@ -24,6 +24,9 @@ add_source_files(nes-sources
 
 # Register plugins
 add_plugin(File Source FileSource.cpp)
+add_plugin(Memory Source MemorySource.cpp)
+add_plugin(Memory SourceValidation MemorySource.cpp)
+add_plugin(Memory FileData MemorySource.cpp)
 add_plugin(File SourceValidation FileSource.cpp)
 
 # Systest adaptors

@@ -19,6 +19,8 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <mutex>
+#include <vector>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -54,6 +56,9 @@ protected:
 
 private:
     bool isOpen;
+    /// NES_LAT_STATS: trigger-to-sink latencies (ms), collected per result buffer, reported at stop().
+    std::vector<uint64_t> latenciesMs;
+    std::mutex latenciesMutex;
     std::string outputFilePath;
     std::ofstream outputFileStream;
     Checksum checksum;

@@ -68,6 +68,18 @@ void BufferManager::destroy()
     NES_DEBUG("Calling BufferManager::destroy()");
     if (isDestroyed.compare_exchange_strong(expected, true))
     {
+        /// Benchmark-build escape hatch (as in the memory-paper branch): logging is compiled out, so when
+        /// NES_BM_STATS is set the peak occupancy goes to stderr for the experiment harness to parse.
+        if (std::getenv("NES_BM_STATS") != nullptr)
+        {
+            std::fprintf(
+                stderr,
+                "BM_STATS peak_pooled=%zu total=%zu peak_pooled_bytes=%zu unpooled_allocs=%zu\n",
+                peakUsedPooledBuffers.load(std::memory_order_relaxed),
+                allBuffers.size(),
+                peakUsedPooledBuffers.load(std::memory_order_relaxed) * bufferSize,
+                unpooledAllocations.load(std::memory_order_relaxed));
+        }
         bool success = true;
         if (allBuffers.size() != getNumberOfAvailableBuffers())
         {
@@ -193,6 +205,11 @@ std::optional<TupleBuffer> BufferManager::getBufferNoBlocking()
     }
     if (memSegment->controlBlock->prepare(shared_from_this()))
     {
+        const auto used = usedPooledBuffers.fetch_add(1, std::memory_order_relaxed) + 1;
+        auto peak = peakUsedPooledBuffers.load(std::memory_order_relaxed);
+        while (used > peak && !peakUsedPooledBuffers.compare_exchange_weak(peak, used, std::memory_order_relaxed))
+        {
+        }
         return TupleBuffer(memSegment->controlBlock.get(), memSegment->ptr, memSegment->size);
     }
     throw InvalidRefCountForBuffer("[BufferManager] got buffer with invalid reference counter");
@@ -208,6 +225,11 @@ std::optional<TupleBuffer> BufferManager::getBufferWithTimeout(const std::chrono
     }
     if (memSegment->controlBlock->prepare(shared_from_this()))
     {
+        const auto used = usedPooledBuffers.fetch_add(1, std::memory_order_relaxed) + 1;
+        auto peak = peakUsedPooledBuffers.load(std::memory_order_relaxed);
+        while (used > peak && !peakUsedPooledBuffers.compare_exchange_weak(peak, used, std::memory_order_relaxed))
+        {
+        }
         return TupleBuffer(memSegment->controlBlock.get(), memSegment->ptr, memSegment->size);
     }
     throw InvalidRefCountForBuffer("[BufferManager] got buffer with invalid reference counter");
@@ -215,6 +237,7 @@ std::optional<TupleBuffer> BufferManager::getBufferWithTimeout(const std::chrono
 
 std::optional<TupleBuffer> BufferManager::getUnpooledBuffer(const size_t bufferSize)
 {
+    unpooledAllocations.fetch_add(1, std::memory_order_relaxed);
     return unpooledChunksManager->getUnpooledBuffer(bufferSize, DEFAULT_ALIGNMENT, shared_from_this());
 }
 
@@ -225,6 +248,7 @@ void BufferManager::recyclePooledBuffer(detail::MemorySegment* segment)
         segment->controlBlock->owningBufferRecycler == nullptr, "Buffer should not retain a reference to its parent while not in use");
     USED_IN_DEBUG const auto couldRecycleBuffer = availableBuffers.writeIfNotFull(segment);
     INVARIANT(couldRecycleBuffer, "should always succeed");
+    usedPooledBuffers.fetch_sub(1, std::memory_order_relaxed);
 }
 
 void BufferManager::recycleUnpooledBuffer(detail::MemorySegment*, const AllocationThreadInfo&)

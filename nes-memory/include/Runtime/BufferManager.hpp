@@ -152,6 +152,12 @@ private:
 
     std::shared_ptr<std::pmr::memory_resource> memoryResource;
     std::atomic<bool> isDestroyed{false};
+
+    /// Peak-occupancy accounting for memory experiments; reported at destroy() when NES_BM_STATS is set
+    /// (Benchmark builds compile out logging, so the report goes to stderr).
+    std::atomic<size_t> usedPooledBuffers{0};
+    std::atomic<size_t> peakUsedPooledBuffers{0};
+    std::atomic<size_t> unpooledAllocations{0};
 };
 
 
