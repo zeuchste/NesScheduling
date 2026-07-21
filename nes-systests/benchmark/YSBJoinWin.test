@@ -1,0 +1,62 @@
+# name: benchmark/YSBJoinWin.test
+# description: Window-size sweep at fixed data volume: 10 ms - 100 s tumbling windows over the same
+#              25M-event YSB-derived views x clicks join (10k keys, 1000 events/s of event time).
+#              Windows per run: 2.5M / 250k / 25k / 2.5k / 250; tuples per window and side:
+#              ~10 / ~95 / ~950 / ~9.5k / ~95k. Small windows stress trigger and task overhead,
+#              large windows stress the probe. Memory source: no file I/O or parsing measured.
+# groups: [benchmark, large, Join]
+
+CREATE LOGICAL SOURCE views(user_id UINT64 NOT NULL, page_id UINT64 NOT NULL, campaign_id UINT64 NOT NULL, ad_type UINT64 NOT NULL, event_type UINT64 NOT NULL, current_ms UINT64 NOT NULL, ip UINT64 NOT NULL, d1 UINT64 NOT NULL, d2 UINT64 NOT NULL, d3 UINT32 NOT NULL, d4 UINT16 NOT NULL);
+CREATE PHYSICAL SOURCE FOR views TYPE Memory;
+ATTACH FILE huge/ysb/ysb_10k_data_25000000.csv
+
+CREATE LOGICAL SOURCE clicks(c_user_id UINT64 NOT NULL, c_page_id UINT64 NOT NULL, c_campaign_id UINT64 NOT NULL, c_ad_type UINT64 NOT NULL, c_event_type UINT64 NOT NULL, c_current_ms UINT64 NOT NULL, c_ip UINT64 NOT NULL, c_d1 UINT64 NOT NULL, c_d2 UINT64 NOT NULL, c_d3 UINT32 NOT NULL, c_d4 UINT16 NOT NULL);
+CREATE PHYSICAL SOURCE FOR clicks TYPE Memory;
+ATTACH FILE huge/ysb/ysb_10k_data_25000000.csv
+
+CREATE SINK winChecksum(start UINT64 NOT NULL, end UINT64 NOT NULL, view_user UINT64 NOT NULL, click_user UINT64 NOT NULL, campaign_id UINT64 NOT NULL) TYPE Checksum;
+
+# Query 1: 10 ms windows (~10 tuples/window/side, 2.5M windows)
+SELECT start, end, user_id AS view_user, c_user_id AS click_user, campaign_id
+FROM (SELECT * FROM views WHERE event_type < UINT64(1))
+INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id = c_campaign_id
+WINDOW TUMBLING (current_ms, c_current_ms, SIZE 10 MS)
+INTO winChecksum;
+----
+2720 5111040
+
+# Query 2: 100 ms windows (~95 tuples/window/side, 250k windows)
+SELECT start, end, user_id AS view_user, c_user_id AS click_user, campaign_id
+FROM (SELECT * FROM views WHERE event_type < UINT64(1))
+INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id = c_campaign_id
+WINDOW TUMBLING (current_ms, c_current_ms, SIZE 100 MS)
+INTO winChecksum;
+----
+30040 56170533
+
+# Query 3: 1 s windows (~950 tuples/window/side, 25k windows)
+SELECT start, end, user_id AS view_user, c_user_id AS click_user, campaign_id
+FROM (SELECT * FROM views WHERE event_type < UINT64(1))
+INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id = c_campaign_id
+WINDOW TUMBLING (current_ms, c_current_ms, SIZE 1 SEC)
+INTO winChecksum;
+----
+300935 560080162
+
+# Query 4: 10 s windows (~9.5k tuples/window/side, 2.5k windows)
+SELECT start, end, user_id AS view_user, c_user_id AS click_user, campaign_id
+FROM (SELECT * FROM views WHERE event_type < UINT64(1))
+INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id = c_campaign_id
+WINDOW TUMBLING (current_ms, c_current_ms, SIZE 10 SEC)
+INTO winChecksum;
+----
+2995305 5547916254
+
+# Query 5: 100 s windows (~95k tuples/window/side, 250 windows)
+SELECT start, end, user_id AS view_user, c_user_id AS click_user, campaign_id
+FROM (SELECT * FROM views WHERE event_type < UINT64(1))
+INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id = c_campaign_id
+WINDOW TUMBLING (current_ms, c_current_ms, SIZE 100 SEC)
+INTO winChecksum;
+----
+29957885 55216845704
