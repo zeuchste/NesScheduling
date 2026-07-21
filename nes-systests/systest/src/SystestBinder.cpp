@@ -662,7 +662,10 @@ struct SystestBinder::Impl
             .parserConfig = statement.parserConfig,
             .sourceConfig = statement.sourceConfig};
 
-        std::unordered_map<Identifier, std::string> defaultParserConfig{{Identifier::parse("type"), "CSV"}};
+        /// MemorySource pre-parses CSV into engine-native binary buffers at open() time; parser type "Native"
+        /// makes the pipelining phase elide the input-formatter stage, so the measured path contains no parsing.
+        const std::string defaultParserType = toUpperCase(physicalSourceConfig.type.asCanonicalString()) == "MEMORY" ? "NATIVE" : "CSV";
+        std::unordered_map<Identifier, std::string> defaultParserConfig{{Identifier::parse("type"), defaultParserType}};
         physicalSourceConfig.parserConfig.merge(defaultParserConfig);
 
         if (testData.has_value())

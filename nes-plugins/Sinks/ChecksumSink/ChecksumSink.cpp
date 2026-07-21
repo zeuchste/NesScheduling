@@ -15,6 +15,10 @@
 #include <ChecksumSink.hpp>
 
 #include <cstddef>
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -37,6 +41,8 @@
 #include <PipelineExecutionContext.hpp>
 #include <SinkRegistry.hpp>
 #include <SinkValidationRegistry.hpp>
+
+
 
 namespace NES
 {
@@ -80,6 +86,25 @@ void ChecksumSink::stop(PipelineExecutionContext&)
 {
     NES_INFO("Checksum Sink completed. Checksum: {}", fmt::streamed(checksum));
 
+    /// Benchmark-build escape hatch: when NES_LAT_STATS is set, report trigger-to-sink latency percentiles
+    /// (ms) to stderr. The probe task's creation timestamp is set at window-trigger time and propagated to
+    /// the result buffers by the emit operator, so per buffer: arrival - creation = time from window close
+    /// to result at the sink.
+    if (std::getenv("NES_LAT_STATS") != nullptr && !latenciesMs.empty())
+    {
+        std::ranges::sort(latenciesMs);
+        const auto pct = [&](const double p)
+        { return latenciesMs[std::min(latenciesMs.size() - 1, static_cast<size_t>(p * static_cast<double>(latenciesMs.size())))]; };
+        std::fprintf(
+            stderr,
+            "LAT_STATS count=%zu p50=%llu p95=%llu p99=%llu max=%llu\n",
+            latenciesMs.size(),
+            static_cast<unsigned long long>(pct(0.50)),
+            static_cast<unsigned long long>(pct(0.95)),
+            static_cast<unsigned long long>(pct(0.99)),
+            static_cast<unsigned long long>(latenciesMs.back()));
+    }
+
     outputFileStream << "Count:UINT64:" << magic_enum::enum_name(DataType::NULLABLE::NOT_NULLABLE)
                      << ",Checksum:UINT64:" << magic_enum::enum_name(DataType::NULLABLE::NOT_NULLABLE) << '\n';
     outputFileStream << checksum.numberOfTuples << "," << checksum.checksum << '\n';
@@ -90,6 +115,17 @@ void ChecksumSink::stop(PipelineExecutionContext&)
 void ChecksumSink::execute(const TupleBuffer& inputBuffer, PipelineExecutionContext&)
 {
     PRECONDITION(inputBuffer, "Invalid input buffer in ChecksumSink.");
+    if (std::getenv("NES_LAT_STATS") != nullptr)
+    {
+        const auto nowMs = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
+        const auto created = inputBuffer.getCreationTimestampInMS().getRawValue();
+        if (created != 0 && nowMs >= created)
+        {
+            const std::scoped_lock lock(latenciesMutex);
+            latenciesMs.push_back(nowMs - created);
+        }
+    }
     /// Create a buffer iterator to help iterate through the tuplebuffer and its children
     BufferIterator iterator{inputBuffer};
 
