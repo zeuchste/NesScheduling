@@ -28,9 +28,33 @@ if [ $# -lt 1 ] || [ ! -x "$1" ]; then
 fi
 SYSTEST="$1"
 shift
+
+## --tier <nano|small|mid|large|server>: emulate a device size on a big node by pinning to N physical
+## cores of NUMA node 0 (taskset) and budgeting the engine's buffer pool. Cache size, memory bandwidth
+## and ISA are NOT emulated - present results as "resource-constrained configurations", not device X.
+TIER=""
+if [ "${1:-}" = "--tier" ]; then TIER="$2"; shift 2; fi
+TASKSET_PREFIX=""
+case "$TIER" in
+    nano)   TIER_CORES=2;  TIER_BUFFERS=131072;  ;;
+    small)  TIER_CORES=4;  TIER_BUFFERS=480000;  ;;
+    mid)    TIER_CORES=8;  TIER_BUFFERS=1200000; ;;
+    large)  TIER_CORES=16; TIER_BUFFERS=2000000; ;;
+    server|"") TIER_CORES=""; TIER_BUFFERS=2000000; ;;
+    *) echo "unknown tier: $TIER" >&2; exit 1 ;;
+esac
+if [ -n "$TIER_CORES" ]; then
+    ## first TIER_CORES distinct physical cores of NUMA node 0 (skips SMT siblings)
+    CORELIST=$(lscpu -p=CPU,CORE,SOCKET,NODE | awk -F, -v n="$TIER_CORES"         '!/^#/ && $4==0 { if (!seen[$2]++) { print $1; if (++c==n) exit } }' | paste -sd, -)
+    TASKSET_PREFIX="taskset -c $CORELIST"
+    THREADS="$TIER_CORES"
+    echo "tier=$TIER cores=$CORELIST buffers=$TIER_BUFFERS threads=$THREADS"
+fi
+
 EXTRA_ARGS=("$@")
 WORKDIR_BASE="${WORKDIR_BASE:-/tmp/join-design-space}"
 THREADS="${THREADS:-4}"
+TIER_BUFFERS="${TIER_BUFFERS:-2000000}"
 FAILED=0
 
 # run_config <name> <join_strategy> [worker args after --]...
@@ -39,9 +63,10 @@ run_config() {
     shift 2
     local start end rc
     start=$(date +%s)
-    "$SYSTEST" -n 6 --workingDir="${WORKDIR_BASE}/${name}" "${EXTRA_ARGS[@]}" \
+    $TASKSET_PREFIX "$SYSTEST" -n 1 --workingDir="${WORKDIR_BASE}/${name}" "${EXTRA_ARGS[@]}" \
         --optimizer join_strategy="$strategy" \
-        -- --worker.query_engine.number_of_worker_threads="$THREADS" "$@" >"${WORKDIR_BASE}/${name}.log" 2>&1
+        -- --worker.query_engine.number_of_worker_threads="$THREADS" \
+        --worker.number_of_buffers_in_global_buffer_manager="$TIER_BUFFERS" "$@" >"${WORKDIR_BASE}/${name}.log" 2>&1
     rc=$?
     end=$(date +%s)
     if [ $rc -eq 0 ]; then
