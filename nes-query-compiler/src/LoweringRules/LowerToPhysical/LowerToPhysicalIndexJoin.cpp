@@ -132,18 +132,22 @@ LoweringRuleResultSubgraph LowerToPhysicalIndexJoin::apply(LogicalOperator logic
     /// vector and the shared index of the slice.
     auto sliceAndWindowStore = std::make_unique<DefaultTimeBasedSliceStore>(
         windowType.getSize().getTime(), windowType.getSlide().getTime(), conf.sliceCacheConfiguration);
-    auto makeSliceStoreRef = [&]()
+    auto makeSliceStoreRef = [&](const JoinBuildSideType side)
     {
         return sliceAndWindowStore->createSliceStoreRef(
-            [](Slice& slice, WorkerThreadId) -> void* { return dynamic_cast<IXJSlice*>(&slice); },
+            [side](Slice& slice, const WorkerThreadId workerThreadId) -> const TupleBuffer*
+            {
+                const auto& ixjSlice = dynamic_cast<IXJSlice&>(slice);
+                return ixjSlice.getPagedVectorTupleBufferRef(workerThreadId, side);
+            },
             [tupleSizeLeft, tupleSizeRight](const WindowBasedOperatorHandler& handler, AbstractBufferProvider& bufferProvider)
             {
                 const CreateNewNLJSliceArgs nljSliceArgs{bufferProvider, tupleSizeLeft, tupleSizeRight};
                 return handler.getCreateNewSlicesFunction(nljSliceArgs);
             });
     };
-    auto sliceStoreRefLeft = makeSliceStoreRef();
-    auto sliceStoreRefRight = makeSliceStoreRef();
+    auto sliceStoreRefLeft = makeSliceStoreRef(JoinBuildSideType::Left);
+    auto sliceStoreRefRight = makeSliceStoreRef(JoinBuildSideType::Right);
 
     auto handler = std::make_shared<IXJOperatorHandler>(
         inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), InnerJoinTriggerStrategy{});

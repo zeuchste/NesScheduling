@@ -59,10 +59,10 @@ void IXJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) co
     auto* localState = dynamic_cast<WindowOperatorBuildLocalState*>(ctx.getLocalState(id));
     auto operatorHandler = localState->getOperatorHandler();
 
-    /// For the index join, the slice store hands out the IXJSlice pointer itself: the build needs both the
-    /// worker-local paged vector and the shared index of the slice.
+    /// The redesigned slice store hands out the worker-local paged-vector buffer; the shared index of the
+    /// owning slice is resolved from that buffer via the IXJSlice registry.
     const auto timestamp = timeFunction->getTs(ctx, record);
-    const auto slicePtr
+    const auto vectorBuffer
         = sliceStoreRef->getDataStructureRef(timestamp, ctx.workerThreadId, operatorHandler, ctx.pipelineMemoryProvider.bufferProvider);
 
     /// Materialize the (casted) key fields into the record and collect them for hashing.
@@ -83,27 +83,15 @@ void IXJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) co
 
         /// 1) Incremental index maintenance: register the upcoming tuple position in the shared, synchronized index.
         nautilus::invoke(
-            +[](int8_t* slice, const WorkerThreadId workerThreadId, const JoinBuildSideType side, const uint64_t keyHash) -> void
-            {
-                /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): void* token from the slice store
-                reinterpret_cast<IXJSlice*>(slice)->insertIndexEntry(side, workerThreadId, keyHash);
-            },
-            slicePtr,
+            +[](TupleBuffer* vectorBuf, const WorkerThreadId workerThreadId, const JoinBuildSideType side, const uint64_t keyHash) -> void
+            { IXJSlice::fromVectorBuffer(vectorBuf->getAvailableMemoryArea().data())->insertIndexEntry(side, workerThreadId, keyHash); },
+            vectorBuffer.asArg(),
             ctx.workerThreadId,
             nautilus::val<JoinBuildSideType>(joinBuildSide),
             hash);
 
         /// 2) Append the tuple to the worker-local paged vector.
-        const auto vectorBufferRef = nautilus::invoke(
-            +[](int8_t* slice, const WorkerThreadId workerThreadId, const JoinBuildSideType side) -> TupleBuffer*
-            {
-                /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,cppcoreguidelines-pro-type-const-cast)
-                return const_cast<TupleBuffer*>(reinterpret_cast<IXJSlice*>(slice)->getPagedVectorTupleBufferRef(workerThreadId, side));
-            },
-            slicePtr,
-            ctx.workerThreadId,
-            nautilus::val<JoinBuildSideType>(joinBuildSide));
-        PagedVectorRef pagedVectorRef{BorrowedNautilusBuffer::from(vectorBufferRef), tupleLayout};
+        PagedVectorRef pagedVectorRef{BorrowedNautilusBuffer::from(vectorBuffer.asArg()), tupleLayout};
         pagedVectorRef.pushBack(record, ctx.pipelineMemoryProvider.bufferProvider);
     }
 }

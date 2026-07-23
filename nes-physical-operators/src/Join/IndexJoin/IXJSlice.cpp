@@ -15,6 +15,8 @@
 #include <Join/IndexJoin/IXJSlice.hpp>
 
 #include <cstdint>
+#include <unordered_map>
+#include <folly/Synchronized.h>
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/PagedVector/PagedVector.hpp>
 #include <Join/StreamJoinUtil.hpp>
@@ -35,6 +37,37 @@ IXJSlice::IXJSlice(
     : NLJSlice(bufferProvider, sliceStart, sliceEnd, numberOfWorkerThreads, tupleSizeLeft, tupleSizeRight)
     , numberOfWorkerThreads(numberOfWorkerThreads)
 {
+    auto reg = vectorBufferRegistry().wlock();
+    for (uint64_t worker = 0; worker < numberOfWorkerThreads; ++worker)
+    {
+        for (const auto side : {JoinBuildSideType::Left, JoinBuildSideType::Right})
+        {
+            if (const auto* buffer = getPagedVectorTupleBufferRef(WorkerThreadId(worker), side))
+            {
+                (*reg)[buffer->getAvailableMemoryArea().data()] = this;
+            }
+        }
+    }
+}
+
+IXJSlice::~IXJSlice()
+{
+    auto reg = vectorBufferRegistry().wlock();
+    std::erase_if(*reg, [this](const auto& kv) { return kv.second == this; });
+}
+
+folly::Synchronized<std::unordered_map<const void*, IXJSlice*>>& IXJSlice::vectorBufferRegistry()
+{
+    static folly::Synchronized<std::unordered_map<const void*, IXJSlice*>> registry;
+    return registry;
+}
+
+IXJSlice* IXJSlice::fromVectorBuffer(const void* vectorMemArea)
+{
+    const auto reg = vectorBufferRegistry().rlock();
+    const auto it = reg->find(vectorMemArea);
+    INVARIANT(it != reg->end(), "No IXJSlice registered for vector buffer {}", vectorMemArea);
+    return it->second;
 }
 
 void IXJSlice::insertIndexEntry(const JoinBuildSideType side, const WorkerThreadId workerThreadId, const uint64_t keyHash)
