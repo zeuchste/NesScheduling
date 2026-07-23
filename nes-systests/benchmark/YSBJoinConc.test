@@ -1,0 +1,68 @@
+# name: benchmark/YSBJoinConc.test
+# description: Concurrency/interference sweep: query 01 is the reference join (1s windows); queries
+#              02-09 are co-runners, alternating a lightweight filter (30% selectivity projection)
+#              and a CPU-bound arithmetic filter. Run query 01 plus the first n co-runners with
+#              -n (n+1) to measure the join under n concurrent queries sharing the worker threads.
+#              Memory source: no file I/O or parsing in the measured path.
+# groups: [benchmark, large, Join]
+
+CREATE LOGICAL SOURCE views(user_id UINT64 NOT NULL, page_id UINT64 NOT NULL, campaign_id UINT64 NOT NULL, ad_type UINT64 NOT NULL, event_type UINT64 NOT NULL, current_ms UINT64 NOT NULL, ip UINT64 NOT NULL, d1 UINT64 NOT NULL, d2 UINT64 NOT NULL, d3 UINT32 NOT NULL, d4 UINT16 NOT NULL);
+CREATE PHYSICAL SOURCE FOR views TYPE Memory;
+ATTACH FILE huge/ysb/ysb_10k_data_25000000.csv
+
+CREATE LOGICAL SOURCE clicks(c_user_id UINT64 NOT NULL, c_page_id UINT64 NOT NULL, c_campaign_id UINT64 NOT NULL, c_ad_type UINT64 NOT NULL, c_event_type UINT64 NOT NULL, c_current_ms UINT64 NOT NULL, c_ip UINT64 NOT NULL, c_d1 UINT64 NOT NULL, c_d2 UINT64 NOT NULL, c_d3 UINT32 NOT NULL, c_d4 UINT16 NOT NULL);
+CREATE PHYSICAL SOURCE FOR clicks TYPE Memory;
+ATTACH FILE huge/ysb/ysb_10k_data_25000000.csv
+
+CREATE SINK concChecksum(start UINT64 NOT NULL, end UINT64 NOT NULL, view_user UINT64 NOT NULL, click_user UINT64 NOT NULL, campaign_id UINT64 NOT NULL) TYPE Checksum;
+CREATE SINK lightSink(user_id UINT64 NOT NULL, campaign_id UINT64 NOT NULL) TYPE Checksum;
+CREATE SINK heavySink(h UINT64 NOT NULL) TYPE Checksum;
+
+# Query 1: the reference join (identical to YSBJoinMem Q1)
+SELECT start, end, user_id AS view_user, c_user_id AS click_user, campaign_id
+FROM (SELECT * FROM views WHERE event_type < UINT64(1))
+INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id = c_campaign_id
+WINDOW TUMBLING (current_ms, c_current_ms, SIZE 1 SEC)
+INTO concChecksum;
+----
+300935 560080162
+
+# Query 2: light co-runner (filter + projection, ~30% selectivity)
+SELECT user_id, campaign_id FROM views WHERE user_id % UINT64(10) < UINT64(3) INTO lightSink;
+----
+7500000 4571374565
+
+# Query 3: heavy co-runner (CPU-bound arithmetic per tuple)
+SELECT (user_id * d1 + d2) % UINT64(1000) AS h FROM views WHERE (user_id * d1 + d2) % UINT64(7) < UINT64(3) INTO heavySink;
+----
+10703990 1736552545
+
+# Query 4: light co-runner
+SELECT user_id, campaign_id FROM views WHERE user_id % UINT64(10) < UINT64(3) INTO lightSink;
+----
+7500000 4571374565
+
+# Query 5: heavy co-runner
+SELECT (user_id * d1 + d2) % UINT64(1000) AS h FROM views WHERE (user_id * d1 + d2) % UINT64(7) < UINT64(3) INTO heavySink;
+----
+10703990 1736552545
+
+# Query 6: light co-runner
+SELECT user_id, campaign_id FROM views WHERE user_id % UINT64(10) < UINT64(3) INTO lightSink;
+----
+7500000 4571374565
+
+# Query 7: heavy co-runner
+SELECT (user_id * d1 + d2) % UINT64(1000) AS h FROM views WHERE (user_id * d1 + d2) % UINT64(7) < UINT64(3) INTO heavySink;
+----
+10703990 1736552545
+
+# Query 8: light co-runner
+SELECT user_id, campaign_id FROM views WHERE user_id % UINT64(10) < UINT64(3) INTO lightSink;
+----
+7500000 4571374565
+
+# Query 9: heavy co-runner
+SELECT (user_id * d1 + d2) % UINT64(1000) AS h FROM views WHERE (user_id * d1 + d2) % UINT64(7) < UINT64(3) INTO heavySink;
+----
+10703990 1736552545

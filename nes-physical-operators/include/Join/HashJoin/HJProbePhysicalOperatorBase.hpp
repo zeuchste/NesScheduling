@@ -26,6 +26,7 @@
 #include <Runtime/Execution/OperatorHandler.hpp>
 #include <Runtime/TupleBuffer.hpp>
 #include <Time/Timestamp.hpp>
+#include <Util/StreamJoinKnobs.hpp>
 #include <ExecutionContext.hpp>
 #include <HashMapOptions.hpp>
 #include <val_arith.hpp>
@@ -52,7 +53,8 @@ public:
         std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout,
         std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
         HashMapOptions leftHashMapOptions,
-        HashMapOptions rightHashMapOptions);
+        HashMapOptions rightHashMapOptions,
+        JoinStorageVariant storageVariant = JoinStorageVariant::PER_KEY_PAGED);
 
 protected:
     /// Pins the hash map TupleBuffer stored as the `index`-th child buffer of the record buffer that `recordBufferRef` points to.
@@ -61,19 +63,35 @@ protected:
     /// Match-pairs probe: iterates all left hash maps against all right hash maps and emits joined records.
     /// Left hash map buffers are stored as child buffers [0, leftNumberOfHashMaps) of the record buffer, right ones follow at
     /// [leftNumberOfHashMaps, leftNumberOfHashMaps + rightNumberOfHashMaps).
+    /// The right-side iteration is limited to the storage-page range [rightPageStart, rightPageEnd) — pass
+    /// (0, EmittedHJWindowTrigger::FULL_RANGE) for the whole table (the range is clamped to the page count).
     void performMatchPairsProbe(
         const nautilus::val<TupleBuffer*>& recordBufferRef,
         nautilus::val<uint64_t> leftNumberOfHashMaps,
         nautilus::val<uint64_t> rightNumberOfHashMaps,
         ExecutionContext& executionCtx,
         const nautilus::val<Timestamp>& windowStart,
-        const nautilus::val<Timestamp>& windowEnd) const;
+        const nautilus::val<Timestamp>& windowEnd,
+        const nautilus::val<uint64_t>& rightPageStart,
+        const nautilus::val<uint64_t>& rightPageEnd) const;
 
     /// Builds a ChainedHashMapRef view over the hash map stored in `hashMapBufferRef` using the key/value layout described by `options`.
     static ChainedHashMapRef makeChainedHashMapRef(const nautilus::val<TupleBuffer*>& hashMapBufferRef, const HashMapOptions& options);
 
+    /// S1 (SHARED_CHAINS) probe: every entry is one tuple with the values inline; walk the opposite chain per entry.
+    void performSharedChainsMatchPairsProbe(
+        const nautilus::val<TupleBuffer*>& recordBufferRef,
+        nautilus::val<uint64_t> leftNumberOfHashMaps,
+        nautilus::val<uint64_t> rightNumberOfHashMaps,
+        ExecutionContext& executionCtx,
+        const nautilus::val<Timestamp>& windowStart,
+        const nautilus::val<Timestamp>& windowEnd,
+        const nautilus::val<uint64_t>& rightPageStart,
+        const nautilus::val<uint64_t>& rightPageEnd) const;
+
     std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout, rightTupleLayout;
     HashMapOptions leftHashMapOptions, rightHashMapOptions;
+    JoinStorageVariant storageVariant;
 };
 
 }

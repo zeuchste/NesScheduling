@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <Identifiers/Identifiers.hpp>
@@ -34,10 +35,27 @@ HJSlice::HJSlice(
     AbstractBufferProvider& bufferProvider,
     SliceStart sliceStart,
     SliceEnd sliceEnd,
-    const CreateNewHashMapSliceArgs& createNewHashMapSliceArgs,
+    const CreateNewHJSliceArgs& createNewHashMapSliceArgs,
     const uint64_t numberOfHashMaps)
     : HashMapSlice(bufferProvider, std::move(sliceStart), std::move(sliceEnd), createNewHashMapSliceArgs, numberOfHashMaps, 2)
+    , rightValueSize(createNewHashMapSliceArgs.rightValueSize)
 {
+    /// The base constructor eagerly initialized every map with the LEFT side's value size. The two sides may have
+    /// different value sizes (e.g., for the SHARED_CHAINS storage variant, which stores the tuples inline), so
+    /// re-initialize the right half (indices [perStream, 2*perStream)) with the right side's entry size.
+    if (rightValueSize != createNewHashMapSliceArgs.valueSize)
+    {
+        const auto perStream = getNumHashMapsPerInputStream();
+        for (uint64_t i = perStream; i < 2 * perStream; ++i)
+        {
+            ChainedHashMap::init(
+                hashMapBuffers[i],
+                createNewHashMapSliceArgs.keySize,
+                rightValueSize,
+                createNewHashMapSliceArgs.numberOfBuckets,
+                createNewHashMapSliceArgs.pageSize);
+        }
+    }
 }
 
 [[nodiscard]] const TupleBuffer*

@@ -21,7 +21,7 @@
 #include <vector>
 #include <Identifiers/Identifiers.hpp>
 #include <Join/StreamJoinUtil.hpp>
-#include <Sequencing/SequenceData.hpp>
+#include <Runtime/TupleBuffer.hpp>
 #include <SliceStore/Slice.hpp>
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
 #include <PipelineExecutionContext.hpp>
@@ -42,18 +42,30 @@ void StreamJoinOperatorHandler::triggerSlices(
     const std::map<WindowInfoAndSequenceNumber, std::vector<std::shared_ptr<Slice>>>& slicesAndWindowInfo,
     PipelineExecutionContext* pipelineCtx)
 {
-    const EmitSlicesFn emitFn
-        = [this](
-              const std::vector<std::shared_ptr<Slice>>& leftSlices,
-              const std::vector<std::shared_ptr<Slice>>& rightSlices,
-              ProbeTaskType probeTaskType,
-              const WindowInfo& windowInfo,
-              const SequenceData& sequenceData,
-              PipelineExecutionContext* ctx) { emitSlicesToProbe(leftSlices, rightSlices, probeTaskType, windowInfo, sequenceData, ctx); };
-
     for (const auto& [windowInfo, allSlices] : slicesAndWindowInfo)
     {
-        std::visit([&](const auto& strategy) { strategy.triggerWindow(allSlices, windowInfo, emitFn, pipelineCtx); }, triggerStrategy);
+        const auto workItems
+            = std::visit([&](const auto& strategy) { return strategy.collectProbeWorkItems(allSlices); }, triggerStrategy);
+
+        /// Expand each work item into one or more probe task buffers (granularity depends on the join
+        /// implementation and its configured processing variant).
+        std::vector<TupleBuffer> probeTasks;
+        for (const auto& workItem : workItems)
+        {
+            createProbeTasks(workItem, windowInfo.windowInfo, pipelineCtx, probeTasks);
+        }
+
+        /// Stamp sequence/chunk numbers over all tasks of this window and emit them.
+        const auto totalChunks = probeTasks.size();
+        ChunkNumber::Underlying chunkNumber = ChunkNumber::INITIAL;
+        for (auto& probeTask : probeTasks)
+        {
+            probeTask.setSequenceNumber(SequenceNumber(windowInfo.sequenceNumber));
+            probeTask.setChunkNumber(ChunkNumber(chunkNumber));
+            probeTask.setLastChunk(chunkNumber == totalChunks);
+            pipelineCtx->emitBuffer(probeTask);
+            ++chunkNumber;
+        }
     }
 }
 

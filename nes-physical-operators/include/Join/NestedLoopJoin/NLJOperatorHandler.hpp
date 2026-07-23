@@ -72,12 +72,10 @@ public:
     getCreateNewSlicesFunction(const CreateNewSlicesArguments&) const override;
 
 private:
-    void emitSlicesToProbe(
-        const std::vector<std::shared_ptr<Slice>>& leftSlices,
-        const std::vector<std::shared_ptr<Slice>>& rightSlices,
-        ProbeTaskType probeTaskType,
+    void createProbeTasks(
+        const ProbeWorkItem& workItem,
         const WindowInfo& windowInfo,
-        const SequenceData& sequenceData,
-        PipelineExecutionContext* pipelineCtx) override;
+        PipelineExecutionContext* pipelineCtx,
+        std::vector<TupleBuffer>& probeTasks) override;
 };
 }

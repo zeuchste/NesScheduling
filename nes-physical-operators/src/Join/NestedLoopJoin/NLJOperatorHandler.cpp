@@ -59,23 +59,21 @@ NLJOperatorHandler::getCreateNewSlicesFunction(const CreateNewSlicesArguments& a
         { return {std::make_shared<NLJSlice>(*bufferProvider, start, end, numberOfWorkerThreads, tupleSizeLeft, tupleSizeRight)}; });
 }
 
-void NLJOperatorHandler::emitSlicesToProbe(
-    const std::vector<std::shared_ptr<Slice>>& leftSlices,
-    const std::vector<std::shared_ptr<Slice>>& rightSlices,
-    ProbeTaskType probeTaskType,
+void NLJOperatorHandler::createProbeTasks(
+    const ProbeWorkItem& workItem,
     const WindowInfo& windowInfo,
-    const SequenceData& sequenceData,
-    PipelineExecutionContext* pipelineCtx)
+    PipelineExecutionContext* pipelineCtx,
+    std::vector<TupleBuffer>& probeTasks)
 {
     /// Combine paged vectors for all slices on both sides
     uint64_t totalNumberOfTuples = 0;
-    for (const auto& slice : leftSlices)
+    for (const auto& slice : workItem.leftSlices)
     {
         auto& nljSlice = dynamic_cast<NLJSlice&>(*slice);
         nljSlice.combinePagedVectors();
         totalNumberOfTuples += nljSlice.getNumberOfTuplesLeft();
     }
-    for (const auto& slice : rightSlices)
+    for (const auto& slice : workItem.rightSlices)
     {
         auto& nljSlice = dynamic_cast<NLJSlice&>(*slice);
         nljSlice.combinePagedVectors();
@@ -84,14 +82,14 @@ void NLJOperatorHandler::emitSlicesToProbe(
 
     /// Collect slice ends
     std::vector<SliceEnd> leftSliceEnds;
-    leftSliceEnds.reserve(leftSlices.size());
-    for (const auto& slice : leftSlices)
+    leftSliceEnds.reserve(workItem.leftSlices.size());
+    for (const auto& slice : workItem.leftSlices)
     {
         leftSliceEnds.emplace_back(slice->getSliceEnd());
     }
     std::vector<SliceEnd> rightSliceEnds;
-    rightSliceEnds.reserve(rightSlices.size());
-    for (const auto& slice : rightSlices)
+    rightSliceEnds.reserve(workItem.rightSlices.size());
+    for (const auto& slice : workItem.rightSlices)
     {
         rightSliceEnds.emplace_back(slice->getSliceEnd());
     }
@@ -106,16 +104,14 @@ void NLJOperatorHandler::emitSlicesToProbe(
 
     auto tupleBuffer = tupleBufferVal.value();
     tupleBuffer.setOriginId(outputOriginId);
-    tupleBuffer.setSequenceNumber(SequenceNumber(sequenceData.sequenceNumber));
-    tupleBuffer.setChunkNumber(ChunkNumber(sequenceData.chunkNumber));
-    tupleBuffer.setLastChunk(sequenceData.lastChunk);
     tupleBuffer.setWatermark(windowInfo.windowStart);
     tupleBuffer.setNumberOfTuples(totalNumberOfTuples);
     tupleBuffer.setCreationTimestampInMS(Timestamp(
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()));
-    new (tupleBuffer.getAvailableMemoryArea().data()) EmittedNLJWindowTrigger{windowInfo, leftSliceEnds, rightSliceEnds, probeTaskType};
+    new (tupleBuffer.getAvailableMemoryArea().data())
+        EmittedNLJWindowTrigger{windowInfo, leftSliceEnds, rightSliceEnds, workItem.probeTaskType};
 
-    pipelineCtx->emitBuffer(tupleBuffer);
+    probeTasks.emplace_back(std::move(tupleBuffer));
 }
 
 }

@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -391,6 +392,25 @@ ChainedHashMapEntry* ChainedHashMap::getChain(uint64_t pos)
 {
     auto chainsArray = chains();
     return chainsArray[pos];
+}
+
+
+void ChainedHashMap::lockForSharedInsert(const TupleBuffer& mapBuffer)
+{
+    auto chm = load(mapBuffer);
+    std::atomic_ref lock{chm.header().sharedInsertLock};
+    uint64_t expected = 0;
+    while (not lock.compare_exchange_weak(expected, 1, std::memory_order_acquire, std::memory_order_relaxed))
+    {
+        expected = 0;
+    }
+}
+
+void ChainedHashMap::unlockAfterSharedInsert(const TupleBuffer& mapBuffer)
+{
+    auto chm = load(mapBuffer);
+    std::atomic_ref lock{chm.header().sharedInsertLock};
+    lock.store(0, std::memory_order_release);
 }
 
 }

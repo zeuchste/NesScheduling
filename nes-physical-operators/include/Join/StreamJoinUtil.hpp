@@ -48,15 +48,16 @@ enum class ProbeTaskType : uint64_t
 
 class PipelineExecutionContext;
 
-/// Callback type for emitting probe tasks from a trigger strategy.
-/// Matches the StreamJoinOperatorHandler::emitSlicesToProbe signature.
-using EmitSlicesFn = std::function<void(
-    const std::vector<std::shared_ptr<Slice>>& leftSlices,
-    const std::vector<std::shared_ptr<Slice>>& rightSlices,
-    ProbeTaskType probeTaskType,
-    const WindowInfo& windowInfo,
-    const SequenceData& sequenceData,
-    PipelineExecutionContext* pipelineCtx)>;
+/// One unit of probe work for a triggered window, produced by a JoinTriggerStrategy.
+/// The join implementation's operator handler expands each work item into one or more probe
+/// task buffers (depending on the configured JoinProbeVariant) and the sequence/chunk
+/// numbers are assigned centrally over all tasks of a window.
+struct ProbeWorkItem
+{
+    std::vector<std::shared_ptr<Slice>> leftSlices;
+    std::vector<std::shared_ptr<Slice>> rightSlices;
+    ProbeTaskType probeTaskType;
+};
 
 /// Concept: a hash join probe operator must declare which join types it supports via a static constexpr method.
 /// This enables compile-time verification in the lowering rules that the chosen probe operator is compatible with

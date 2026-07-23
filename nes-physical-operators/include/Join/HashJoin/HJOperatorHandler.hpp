@@ -19,8 +19,10 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
+#include <Util/StreamJoinKnobs.hpp>
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/HashMap/HashMap.hpp>
 #include <Join/StreamJoinOperatorHandler.hpp>
@@ -38,12 +40,22 @@ namespace NES
 /// This task models the information for a hash join based window trigger
 struct EmittedHJWindowTrigger
 {
+    /// Full-range sentinel: beginRange() clamps to the number of pages, so [0, FULL_RANGE) is the whole table.
+    static constexpr uint64_t FULL_RANGE = UINT64_MAX;
+
     EmittedHJWindowTrigger(
-        const WindowInfo windowInfo, const uint64_t leftNumberOfHashMaps, const uint64_t rightNumberOfHashMaps, ProbeTaskType probeTaskType)
+        const WindowInfo windowInfo,
+        const uint64_t leftNumberOfHashMaps,
+        const uint64_t rightNumberOfHashMaps,
+        ProbeTaskType probeTaskType,
+        const uint64_t rightPageStart = 0,
+        const uint64_t rightPageEnd = FULL_RANGE)
         : windowInfo(windowInfo)
         , leftNumberOfHashMaps(leftNumberOfHashMaps)
         , rightNumberOfHashMaps(rightNumberOfHashMaps)
         , probeTaskType(probeTaskType)
+        , rightPageStart(rightPageStart)
+        , rightPageEnd(rightPageEnd)
     {
     }
 
@@ -51,6 +63,9 @@ struct EmittedHJWindowTrigger
     uint64_t leftNumberOfHashMaps;
     uint64_t rightNumberOfHashMaps;
     ProbeTaskType probeTaskType;
+    /// Storage-page range of the RIGHT tables that this task probes (BUCKET_RANGES); [0, FULL_RANGE) otherwise.
+    uint64_t rightPageStart;
+    uint64_t rightPageEnd;
 };
 
 class HJOperatorHandler final : public StreamJoinOperatorHandler
@@ -61,7 +76,11 @@ public:
         OriginId outputOriginId,
         std::unique_ptr<WindowSlicesStoreInterface> sliceAndWindowStore,
         uint64_t maxNumberOfBuckets,
-        JoinTriggerStrategy triggerStrategy);
+        JoinTriggerStrategy triggerStrategy,
+        JoinBuildVariant buildVariant = JoinBuildVariant::LOCAL_TABLES,
+        JoinProbeVariant probeVariant = JoinProbeVariant::SINGLE_TASK,
+        uint64_t probeRanges = 0,
+        std::optional<uint64_t> fixedNumberOfBuckets = std::nullopt);
 
     [[nodiscard]] std::function<std::vector<std::shared_ptr<Slice>>(SliceStart, SliceEnd)>
     getCreateNewSlicesFunction(const CreateNewSlicesArguments& newSlicesArguments) const override;
@@ -74,17 +93,24 @@ private:
     std::atomic<bool> setupAlreadyCalledRight;
 
 protected:
-    void emitSlicesToProbe(
-        const std::vector<std::shared_ptr<Slice>>& leftSlices,
-        const std::vector<std::shared_ptr<Slice>>& rightSlices,
-        ProbeTaskType probeTaskType,
+    void createProbeTasks(
+        const ProbeWorkItem& workItem,
         const WindowInfo& windowInfo,
-        const SequenceData& sequenceData,
-        PipelineExecutionContext* pipelineCtx) override;
+        PipelineExecutionContext* pipelineCtx,
+        std::vector<TupleBuffer>& probeTasks) override;
 
     folly::Synchronized<RollingAverage<uint64_t>> leftRollingAverageNumberOfKeys;
     folly::Synchronized<RollingAverage<uint64_t>> rightRollingAverageNumberOfKeys;
     uint64_t maxNumberOfBuckets;
+    /// B1/B2: one build table per worker thread and side, or one shared per side.
+    JoinBuildVariant buildVariant;
+    /// P1-P4: granularity of the probe tasks created per work item.
+    JoinProbeVariant probeVariant;
+    /// BUCKET_RANGES: ranges per table pair (0 = number of worker threads).
+    uint64_t probeRanges;
+    /// S3 (FIXED_ARRAY): fixed bucket-array size from the estimated key cardinality; disables the
+    /// rolling-average-based adaptive sizing.
+    std::optional<uint64_t> fixedNumberOfBuckets;
 };
 
 }

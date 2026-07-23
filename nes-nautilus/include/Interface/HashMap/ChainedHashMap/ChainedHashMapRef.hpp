@@ -137,6 +137,27 @@ public:
     [[nodiscard]] EntryIterator begin() const;
     [[nodiscard]] EntryIterator end() const;
 
+    /// Iteration over the entries of the storage-page range [pageStart, pageEnd). pageEnd is clamped to the
+    /// number of pages, so (0, UINT64_MAX) iterates the whole map. Used by the BUCKET_RANGES probe variant
+    /// to split one table's probe across multiple tasks.
+    [[nodiscard]] EntryIterator beginRange(const nautilus::val<uint64_t>& pageStart, const nautilus::val<uint64_t>& pageEnd) const;
+    [[nodiscard]] EntryIterator endRange(const nautilus::val<uint64_t>& pageStart, const nautilus::val<uint64_t>& pageEnd) const;
+
+    /// Always appends a new entry for the given record (no lookup/deduplication by key) and copies both the key
+    /// and the value fields of the record into the entry. Used by the SHARED_CHAINS join storage variant, where
+    /// every tuple is its own entry with the values inline.
+    nautilus::val<AbstractHashMapEntry*>
+    insertEntry(const Record& record, const HashFunction& hashFunction, const nautilus::val<AbstractBufferProvider*>& bufferProvider);
+
+    /// Walks the chain of the probe entry's hash and calls fn for EVERY entry whose keys match — in contrast to
+    /// findEntry(), which returns only the first match. The probe entry may belong to a different map with the
+    /// same key layout (its memory is reinterpreted with this map's field offsets); it is paired with the
+    /// TupleBuffer of its owning map for correct memory access.
+    void forEachMatchingEntry(
+        const nautilus::val<ChainedHashMapEntry*>& probeEntry,
+        const nautilus::val<TupleBuffer*>& probeEntryBuffer,
+        const std::function<void(const ChainedEntryRef&)>& fn) const;
+
 private:
     /// Finds the chain for the given hash value. If no chain exists, it returns nullptr.
     [[nodiscard]] nautilus::val<ChainedHashMapEntry*> findChain(const HashFunction::HashValue& hash) const;

@@ -29,6 +29,8 @@ enum class StreamJoinStrategy : uint8_t
 {
     NESTED_LOOP_JOIN,
     HASH_JOIN,
+    SORT_MERGE_JOIN,
+    INDEX_JOIN,
     OPTIMIZER_CHOOSES
 };
 
@@ -42,7 +44,7 @@ public:
         = {"join_strategy",
            StreamJoinStrategy::OPTIMIZER_CHOOSES,
            "Join Strategy"
-           "[NESTED_LOOP_JOIN|HASH_JOIN|OPTIMIZER_CHOOSES]."};
+           "[NESTED_LOOP_JOIN|HASH_JOIN|SORT_MERGE_JOIN|INDEX_JOIN|OPTIMIZER_CHOOSES]."};
 
     QueryOptimizerNetworkConfiguration network = {"network", "Network configuration overrides for query decomposition"};
 

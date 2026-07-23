@@ -20,6 +20,7 @@
 #include <utility>
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/BufferRef/TupleBufferRef.hpp>
+#include <Interface/HashMap/ChainedHashMap/ChainedHashMap.hpp>
 #include <Interface/HashMap/ChainedHashMap/ChainedHashMapRef.hpp>
 #include <Interface/HashMap/HashMap.hpp>
 #include <Interface/NautilusBuffer.hpp>
@@ -82,6 +83,28 @@ void HJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) con
     /// in the result set. This is the case as an inner join requires all join conditions to be TRUE (i.e., no NULL values in the join fields).
     if (not containsNullInKey)
     {
+        /// P3 (SHARED_TABLE): serialize the whole insert against the other worker threads building into the same map.
+        /// storageVariant/sharedHashMap are compile-time constants during tracing, so the non-selected paths and the
+        /// lock invocations vanish from the compiled pipelines of the other variants.
+        if (sharedHashMap)
+        {
+            nautilus::invoke(
+                +[](HashMap* map) -> void { dynamic_cast<ChainedHashMap*>(map)->lockForSharedInsert(); }, hashMapPtr);
+        }
+
+        if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
+        {
+            /// S1: every tuple becomes its own entry with the value fields inline on the shared entry pages.
+            hashMap.insertEntry(record, *hashMapOptions.hashFunction, ctx.pipelineMemoryProvider.bufferProvider);
+            if (sharedHashMap)
+            {
+                nautilus::invoke(
+                    +[](HashMap* map) -> void { dynamic_cast<ChainedHashMap*>(map)->unlockAfterSharedInsert(); }, hashMapPtr);
+            }
+            return;
+        }
+
+        /// S2/S3: one entry per distinct key whose value slot holds a per-key PagedVector.
         /// Finding or creating the entry for the provided record
         const auto hashMapEntry = hashMap.findOrCreateEntry(
             record,
@@ -125,6 +148,12 @@ void HJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) con
             static_cast<nautilus::val<uint32_t*>>(entryMemArea));
         PagedVectorRef pagedVectorRef(BorrowedNautilusBuffer::from(pagedVecBuffer.asArg()), tupleLayout);
         pagedVectorRef.pushBack(record, ctx.pipelineMemoryProvider.bufferProvider);
+
+        if (sharedHashMap)
+        {
+            nautilus::invoke(
+                +[](HashMap* map) -> void { dynamic_cast<ChainedHashMap*>(map)->unlockAfterSharedInsert(); }, hashMapPtr);
+        }
     }
 }
 
@@ -134,9 +163,13 @@ HJBuildPhysicalOperator::HJBuildPhysicalOperator(
     std::unique_ptr<TimeFunction> timeFunction,
     std::shared_ptr<PagedVectorTupleLayout> tupleLayout,
     HashMapOptions hashMapOptions,
-    std::unique_ptr<SliceStoreRef> sliceStoreRef)
+    std::unique_ptr<SliceStoreRef> sliceStoreRef,
+    const JoinStorageVariant storageVariant,
+    const bool sharedHashMap)
     : StreamJoinBuildPhysicalOperator{operatorHandlerId, joinBuildSide, std::move(timeFunction), std::move(tupleLayout), std::move(sliceStoreRef)}
     , hashMapOptions(std::move(hashMapOptions))
+    , storageVariant(storageVariant)
+    , sharedHashMap(sharedHashMap)
 {
 }
 

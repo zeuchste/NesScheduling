@@ -233,6 +233,44 @@ nautilus::val<AbstractHashMapEntry*> ChainedHashMapRef::findOrCreateEntry(
     return castedEntryRef;
 }
 
+nautilus::val<AbstractHashMapEntry*> ChainedHashMapRef::insertEntry(
+    const Record& record, const HashFunction& hashFunction, const nautilus::val<AbstractBufferProvider*>& bufferProvider)
+{
+    std::vector<VarVal> keyValues;
+    for (const auto& [fieldIdentifier, type, fieldOffset] : nautilus::static_iterable(fieldKeys))
+    {
+        keyValues.emplace_back(record.read(fieldIdentifier));
+    }
+
+    const auto hashValue = hashFunction.calculate(keyValues);
+    const auto newEntryRef = ChainedEntryRef{insert(hashValue, bufferProvider), tupleBuffer, fieldKeys, fieldValues};
+    newEntryRef.copyKeysToEntry(record, bufferProvider);
+    newEntryRef.copyValuesToEntry(record, bufferProvider);
+    return static_cast<nautilus::val<AbstractHashMapEntry*>>(newEntryRef.entryRef);
+}
+
+void ChainedHashMapRef::forEachMatchingEntry(
+    const nautilus::val<ChainedHashMapEntry*>& probeEntry,
+    const nautilus::val<TupleBuffer*>& probeEntryBuffer,
+    const std::function<void(const ChainedEntryRef&)>& fn) const
+{
+    /// Reinterpreting the probe entry's memory with this map's field offsets: the key layout is identical across
+    /// both join sides (enforced by the cast/extension machinery in the lowering), only the labels differ.
+    /// The probe entry belongs to the other side's map, so it is paired with its owning buffer.
+    const ChainedEntryRef probeEntryRef(probeEntry, probeEntryBuffer, fieldKeys, fieldValues);
+    const auto probeKeys = probeEntryRef.getKey();
+    auto entry = findChain(probeEntryRef.getHash());
+    while (entry != nullptr)
+    {
+        const ChainedEntryRef entryRef(entry, tupleBuffer, fieldKeys, fieldValues);
+        if (compareKeys(entryRef, probeKeys))
+        {
+            fn(entryRef);
+        }
+        entry = entryRef.getNext();
+    }
+}
+
 void ChainedHashMapRef::insertOrUpdateEntry(
     const nautilus::val<AbstractHashMapEntry*>& otherEntry,
     const std::function<void(nautilus::val<AbstractHashMapEntry*>&)>& onUpdate,
@@ -319,6 +357,68 @@ ChainedHashMapRef::EntryIterator ChainedHashMapRef::end() const
         },
         tupleBuffer);
     return {tupleBuffer, nullptr, entrySize, numberOfTuples, -1, -1, -1, -1};
+}
+
+namespace
+{
+uint64_t clampedPageEndProxy(const TupleBuffer* buf, const uint64_t pageEnd)
+{
+    const auto numberOfPages = ChainedHashMap::load(*buf).getNumberOfPages();
+    return pageEnd < numberOfPages ? pageEnd : numberOfPages;
+}
+
+uint64_t entriesInPageRangeProxy(const TupleBuffer* buf, const uint64_t pageStart, const uint64_t pageEnd)
+{
+    const auto chainedHashMap = ChainedHashMap::load(*buf);
+    uint64_t count = 0;
+    for (uint64_t page = pageStart; page < pageEnd; ++page)
+    {
+        count += chainedHashMap.getPage(page).getNumberOfTuples();
+    }
+    return count;
+}
+}
+
+ChainedHashMapRef::EntryIterator
+ChainedHashMapRef::beginRange(const nautilus::val<uint64_t>& pageStart, const nautilus::val<uint64_t>& pageEnd) const
+{
+    const auto clampedEnd = nautilus::invoke(clampedPageEndProxy, tupleBuffer, pageEnd);
+    const auto currentEntry = nautilus::invoke(
+        +[](TupleBuffer* buf, const uint64_t pageStartVal, const uint64_t pageEndVal)
+        {
+            if (pageStartVal >= pageEndVal)
+            {
+                return static_cast<const std::byte*>(nullptr);
+            }
+            const auto chm = ChainedHashMap::load(*buf);
+            return chm.getPage(pageStartVal).getAvailableMemoryArea().data();
+        },
+        tupleBuffer,
+        pageStart,
+        clampedEnd);
+    const auto numberOfTuplesInCurrentPage = nautilus::invoke(
+        +[](TupleBuffer* buf, const uint64_t pageStartVal, const uint64_t pageEndVal) -> uint64_t
+        {
+            if (pageStartVal >= pageEndVal)
+            {
+                return 0;
+            }
+            return ChainedHashMap::load(*buf).getPage(pageStartVal).getNumberOfTuples();
+        },
+        tupleBuffer,
+        pageStart,
+        clampedEnd);
+    const nautilus::val<uint64_t> tupleIndex = 0;
+    const nautilus::val<uint64_t> indexOnPage = 0;
+    return {tupleBuffer, currentEntry, entrySize, tupleIndex, indexOnPage, numberOfTuplesInCurrentPage, pageStart, clampedEnd};
+}
+
+ChainedHashMapRef::EntryIterator
+ChainedHashMapRef::endRange(const nautilus::val<uint64_t>& pageStart, const nautilus::val<uint64_t>& pageEnd) const
+{
+    const auto clampedEnd = nautilus::invoke(clampedPageEndProxy, tupleBuffer, pageEnd);
+    const auto entriesInRange = nautilus::invoke(entriesInPageRangeProxy, tupleBuffer, pageStart, clampedEnd);
+    return {tupleBuffer, nullptr, entrySize, entriesInRange, -1, -1, -1, -1};
 }
 
 nautilus::val<ChainedHashMapEntry*> ChainedHashMapRef::findChain(const HashFunction::HashValue& hash) const

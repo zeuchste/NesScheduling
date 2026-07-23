@@ -29,6 +29,8 @@ enum class JoinImplementation : uint8_t
 {
     NESTED_LOOP_JOIN,
     HASH_JOIN,
+    SORT_MERGE_JOIN,
+    INDEX_JOIN,
     CHOICELESS
 };
 

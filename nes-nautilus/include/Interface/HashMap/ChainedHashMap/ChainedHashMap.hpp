@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -118,6 +119,13 @@ protected:
     void appendPage(AbstractBufferProvider* bufferProvider);
     void allocateNewVarSizedPage(AbstractBufferProvider* bufferProvider);
 
+    /// Serializes inserts for the SHARED_TABLE join build variant, where all worker threads build into one map.
+    /// The map object is an ephemeral view over the buffer, so the lock lives in the buffer header (spinlock word)
+    /// and is shared by every view. Every other path stays unsynchronized.
+    /// ponytail: coarse per-map spinlock around the whole insert; CAS-based bucket heads if contention matters.
+    static void lockForSharedInsert(const TupleBuffer& mapBuffer);
+    static void unlockAfterSharedInsert(const TupleBuffer& mapBuffer);
+
 private:
     /// private constructor that takes a pre-filled buffer
     explicit ChainedHashMap(TupleBuffer buffer) : buffer(std::move(buffer)) { }
@@ -135,6 +143,7 @@ private:
         uint64_t entriesPerPage;
         uint64_t numRecords = 0;
         uint64_t mask;
+        uint64_t sharedInsertLock = 0; /// Spinlock word for the SHARED_TABLE build variant; see lockForSharedInsert()
         VariableSizedAccess::Index storageSpaceIndex;
         VariableSizedAccess::Index varSizedSpaceIndex;
 

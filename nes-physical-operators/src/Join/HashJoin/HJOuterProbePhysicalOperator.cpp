@@ -211,7 +211,18 @@ void HJOuterProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordBu
     }
     else if (probeTaskType == ProbeTaskType::MATCH_PAIRS)
     {
-        performMatchPairsProbe(recordBufferRef, leftNumberOfHashMaps, rightNumberOfHashMaps, executionCtx, windowStart, windowEnd);
+        const auto rightPageStart
+            = readValueFromMemRef<uint64_t>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightPageStart));
+        const auto rightPageEnd = readValueFromMemRef<uint64_t>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightPageEnd));
+        performMatchPairsProbe(
+            recordBufferRef,
+            leftNumberOfHashMaps,
+            rightNumberOfHashMaps,
+            executionCtx,
+            windowStart,
+            windowEnd,
+            rightPageStart,
+            rightPageEnd);
     }
     else
     {

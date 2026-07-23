@@ -11,7 +11,9 @@
 # limitations under the License.
 
 add_subdirectory(HashJoin)
+add_subdirectory(IndexJoin)
 add_subdirectory(NestedLoopJoin)
+add_subdirectory(SortMergeJoin)
 
 add_source_files(nes-physical-operators
         JoinTriggerStrategy.cpp

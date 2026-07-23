@@ -41,7 +41,8 @@ public:
         std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout,
         std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
         HashMapOptions leftHashMapBasedOptions,
-        HashMapOptions rightHashMapBasedOptions);
+        HashMapOptions rightHashMapBasedOptions,
+        JoinStorageVariant storageVariant = JoinStorageVariant::PER_KEY_PAGED);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 

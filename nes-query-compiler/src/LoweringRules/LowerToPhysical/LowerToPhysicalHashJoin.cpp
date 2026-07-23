@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <string>
@@ -57,6 +58,7 @@
 #include <Join/StreamJoinOperatorHandler.hpp>
 #include <Join/StreamJoinUtil.hpp>
 #include <LoweringRules/AbstractLoweringRule.hpp>
+#include <LoweringRules/LowerToPhysical/StreamJoinLoweringUtil.hpp>
 #include <Operators/LogicalOperator.hpp>
 #include <Operators/LogicalOperatorFwd.hpp>
 #include <Operators/Windows/JoinLogicalOperator.hpp>
@@ -72,6 +74,7 @@
 #include <Util/Common.hpp>
 #include <Util/Logger/Logger.hpp>
 #include <Util/SchemaFactory.hpp>
+#include <Util/StreamJoinKnobs.hpp>
 #include <Watermark/TimeFunction.hpp>
 #include <WindowTypes/Measures/TimeCharacteristic.hpp>
 #include <WindowTypes/Types/TimeBasedWindowType.hpp>
@@ -87,148 +90,19 @@
 namespace NES
 {
 
+using StreamJoinLoweringUtil::FieldNamesExtension;
+using StreamJoinLoweringUtil::addMapOperators;
+using StreamJoinLoweringUtil::getJoinFieldExtensionsLeftRight;
+
 namespace
 {
-/// Helper struct for storing the old and new field name and datatype for each join comparison
-struct FieldNamesExtension
-{
-    Field oldField;
-    QualifiedUnboundField newField;
-};
-
-std::pair<std::vector<FieldNamesExtension>, std::vector<FieldNamesExtension>>
-getJoinFieldExtensionsLeftRight(const LogicalOperator& leftChild, const LogicalOperator& rightChild, const LogicalFunction& joinFunction)
-{
-    /// Tuple  of left, right join fields and the combined data type, e.g., i32 and i8 --> i32
-    std::vector<FieldNamesExtension> leftJoinNames;
-    std::vector<FieldNamesExtension> rightJoinNames;
-
-    /// Retrieves all leaf functions, as we need the leaf functions (join comparison) to check if they have the same number and data types
-    /// for both join sides.
-    std::unordered_set<LogicalFunction> parentsOfJoinComparisons;
-    for (auto itr : BFSRange<LogicalFunction>(joinFunction))
-    {
-        /// If any child is a leaf function, we put the current function into the set
-        const auto anyChildIsLeaf
-            = std::ranges::any_of(itr.getChildren(), [](const LogicalFunction& child) { return child.getChildren().empty(); });
-        if (anyChildIsLeaf)
-        {
-            parentsOfJoinComparisons.insert(itr);
-        }
-    }
-    uint64_t counter = 0;
-    std::ranges::for_each(
-        parentsOfJoinComparisons,
-        [leftChild, rightChild, &leftJoinNames, &rightJoinNames, &counter, &joinFunction](const LogicalFunction& parent)
-        {
-            /// We expect the parent to have exactly two children and that both children are FieldAccessLogicalFunction
-            /// This should be true, as the join operator receives an input schema from its parent operator without any additional functions
-            /// over the join fields.
-            PRECONDITION(parent.getChildren().size() == 2, "Expect the parent to have exact two children, left and right join fields");
-            const auto& firstField = parent.getChildren().at(0).tryGetAs<FieldAccessLogicalFunction>();
-            const auto& secondField = parent.getChildren().at(1).tryGetAs<FieldAccessLogicalFunction>();
-            if (not(firstField.has_value() && secondField.has_value()))
-            {
-                throw UnknownJoinStrategy(
-                    "Could not handle join strategy that has chained logical functions operating over the join fields!");
-            }
-
-            auto [leftField, rightField] = [&]
-            {
-                if (firstField.value()->getField().getProducedBy() == leftChild)
-                {
-                    PRECONDITION(
-                        secondField.value()->getField().getProducedBy() == rightChild, "Expected the second field to be the right field");
-                    return std::pair{firstField.value()->getField(), secondField.value()->getField()};
-                }
-                PRECONDITION(
-                    firstField.value()->getField().getProducedBy() == rightChild, "Expected the first field to be the right field");
-                PRECONDITION(
-                    secondField.value()->getField().getProducedBy() == leftChild, "Expected the second field to be the left field");
-                return std::pair{secondField.value()->getField(), firstField.value()->getField()};
-            }();
-            if (leftField.getProducedBy() == rightField.getProducedBy())
-            {
-                throw UnknownJoinStrategy("Cannot handle self joins yet, but got {} as part of the predicate", joinFunction);
-            }
-
-            /// If they do not have the same data types, we need to cast both to a common one
-            if (firstField->getDataType() != secondField->getDataType())
-            {
-                /// We are now converting the fields to a physical data type and then joining them together
-                if (auto joinedDataType = leftField.getDataType().join(rightField.getDataType()); joinedDataType.has_value())
-                {
-                    const auto leftFieldNewName
-                        = QualifiedIdentifier::create(leftField.getLastName(), Identifier::parse("j" + std::to_string(counter++)));
-                    const auto rightFieldNewName
-                        = QualifiedIdentifier::create(rightField.getLastName(), Identifier::parse("j" + std::to_string(counter++)));
-                    leftJoinNames.emplace_back(
-                        FieldNamesExtension{.oldField = leftField, .newField = QualifiedUnboundField{leftFieldNewName, *joinedDataType}});
-                    rightJoinNames.emplace_back(
-                        FieldNamesExtension{.oldField = rightField, .newField = QualifiedUnboundField{rightFieldNewName, *joinedDataType}});
-                }
-                else
-                {
-                    throw UnknownJoinStrategy("Cannot join field types {} and {}", leftField.getDataType(), rightField.getDataType());
-                }
-            }
-            else
-            {
-                leftJoinNames.emplace_back(FieldNamesExtension{
-                    .oldField = leftField, .newField = QualifiedUnboundField{leftField.getLastName(), leftField.getDataType()}});
-                rightJoinNames.emplace_back(FieldNamesExtension{
-                    .oldField = rightField, .newField = QualifiedUnboundField{rightField.getLastName(), rightField.getDataType()}});
-            }
-        });
-
-    return {leftJoinNames, rightJoinNames};
-}
-
-/// Creates for each field a map operator that has as its function a cast to the correct data type
-std::pair<Schema<QualifiedUnboundField, Ordered>, std::vector<std::shared_ptr<PhysicalOperatorWrapper>>> addMapOperators(
-    const LogicalOperator& inputOperator,
-    const std::vector<FieldNamesExtension>& fieldNameExtensions,
-    const MemoryLayoutType& memoryLayoutType)
-{
-    auto currentFields = createPhysicalOutputSchema(inputOperator.getTraitSet()) | std::ranges::to<std::vector<QualifiedUnboundField>>();
-    std::vector<std::shared_ptr<PhysicalOperatorWrapper>> mapPhysicalOperators;
-    for (const auto& [oldField, newField] : fieldNameExtensions)
-    {
-        if (oldField.getLastName() == newField.getFullyQualifiedName() and oldField.getDataType() == newField.getDataType())
-        {
-            continue;
-        }
-
-        /// Creating a new physical function that reads from the old field and casts it to the new data type
-        const FieldAccessLogicalFunction fieldAccessOldField(oldField);
-        const CastToTypeLogicalFunction castToTypeFunction(newField.getDataType(), fieldAccessOldField);
-        const PhysicalFunction castedPhysicalFunction
-            = QueryCompilation::FunctionProvider::lowerFunction(castToTypeFunction, *inputOperator.getTraitSet().get<FieldMappingTrait>());
-
-        /// Get a copy of the current input schema before adding to the inputSchemaOfMap the newly added field
-        auto inputSchema = Schema<QualifiedUnboundField, Ordered>{currentFields};
-        currentFields.emplace_back(newField);
-        const Schema<QualifiedUnboundField, Ordered> outputSchema(currentFields);
-
-        /// Create a new map operator with the cast as its function
-        mapPhysicalOperators.emplace_back(std::make_shared<PhysicalOperatorWrapper>(
-            MapPhysicalOperator(newField.getFullyQualifiedName(), castedPhysicalFunction),
-            inputSchema,
-            outputSchema,
-            memoryLayoutType,
-            memoryLayoutType));
-    }
-
-    return {Schema<QualifiedUnboundField, Ordered>{currentFields}, mapPhysicalOperators};
-}
-
 HashMapOptions createHashMapOptions(
     std::vector<FieldNamesExtension>& joinFieldExtensions,
     Schema<QualifiedUnboundField, Ordered>& inputSchema,
-    const QueryExecutionConfiguration& conf)
+    const QueryExecutionConfiguration& conf,
+    const JoinStorageVariant storageVariant)
 {
     uint64_t keySize = 0;
-    constexpr auto valueSize = sizeof(uint32_t);
     std::vector<PhysicalFunction> keyFunctions;
     std::vector<QualifiedIdentifier> fieldKeyNames;
     for (auto& fieldExtension : joinFieldExtensions)
@@ -238,13 +112,35 @@ HashMapOptions createHashMapOptions(
         fieldKeyNames.emplace_back(fieldExtension.newField.getFullyQualifiedName());
     }
 
+    /// S2/S3 store a per-key PagedVector as the entry value; S1 (SHARED_CHAINS) stores the non-key record
+    /// fields inline in the entry, so every tuple becomes its own entry on the shared entry pages.
+    uint64_t valueSize = 0;
+    std::vector<QualifiedIdentifier> fieldValueNames;
+    if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
+    {
+        for (const auto& field : inputSchema)
+        {
+            if (std::ranges::find(fieldKeyNames, field.getFullyQualifiedName()) == fieldKeyNames.end())
+            {
+                valueSize += field.getDataType().getSizeInBytesWithNull();
+                fieldValueNames.emplace_back(field.getFullyQualifiedName());
+            }
+        }
+    }
+    else
+    {
+        /// On the redesigned map the entry value is the 4-byte child-buffer index of the entry's PagedVector,
+        /// not an inline PagedVector object.
+        valueSize = sizeof(uint32_t);
+    }
+
     const auto pageSize = conf.pageSize.getValue();
-    const auto numberOfBuckets = conf.numberOfPartitions.getValue();
+    const auto numberOfBuckets
+        = storageVariant == JoinStorageVariant::FIXED_ARRAY ? conf.joinFixedBuckets.getValue() : conf.numberOfPartitions.getValue();
     const auto entrySize = sizeof(ChainedHashMapEntry) + keySize + valueSize;
     const auto entriesPerPage = pageSize / entrySize;
 
-    /// As we are using a paged vector for the value, we do not need to set the fieldNameValues for the chained hashmap
-    const auto& [fieldKeys, fieldValues] = ChainedEntryMemoryProvider::createFieldOffsets(inputSchema, fieldKeyNames, {});
+    const auto& [fieldKeys, fieldValues] = ChainedEntryMemoryProvider::createFieldOffsets(inputSchema, fieldKeyNames, fieldValueNames);
     HashMapOptions hashMapOptions{
         std::make_unique<MurMur3HashFunction>(),
         std::move(keyFunctions),
@@ -301,6 +197,23 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
                                     })
         | std::views::join | std::ranges::to<std::vector<OriginId>>();
 
+    /// Design-space knobs of the join: storage (S1-S3), processing (P1-P4), and trigger (T1/T2).
+    /// Unsupported settings degrade to the default with a warning instead of throwing: a throw here executes
+    /// during query compilation on the deployed node and stalls the peers of the distributed plan.
+    auto storageVariant = conf.joinStorage.getValue();
+    const auto buildVariant = conf.joinBuild.getValue();
+    const auto probeVariant = conf.joinProbe.getValue();
+    const auto probeRanges = conf.joinProbeRanges.getValue();
+    if (conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER)
+    {
+        NES_WARNING("join_trigger=EAGER (T2) is not implemented yet; falling back to LAZY (T1).");
+    }
+    if (storageVariant == JoinStorageVariant::SHARED_CHAINS and isOuterJoin(join->getJoinType()))
+    {
+        NES_WARNING("join_storage=SHARED_CHAINS (S1) supports inner joins only; falling back to PER_KEY_PAGED (S2) for this join.");
+        storageVariant = JoinStorageVariant::PER_KEY_PAGED;
+    }
+
     /// Our current hash join implementation uses a hash table that requires each key to be 100% identical in terms of no. fields and data types.
     /// Therefore, we need to create map operators that extend and cast the fields to the correct data types.
     auto [leftJoinFields, rightJoinFields] = getJoinFieldExtensionsLeftRight(leftOperator, rightOperator, logicalJoinFunction);
@@ -308,8 +221,8 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
     auto [newRightInputSchema, rightMapOperators] = addMapOperators(rightOperator, rightJoinFields, memoryLayoutType);
     auto leftTupleLayout = std::make_shared<DefaultPagedVectorTupleLayout>(newLeftInputSchema);
     auto rightTupleLayout = std::make_shared<DefaultPagedVectorTupleLayout>(newRightInputSchema);
-    auto leftHashMapOptions = createHashMapOptions(leftJoinFields, newLeftInputSchema, conf);
-    auto rightHashMapOptions = createHashMapOptions(rightJoinFields, newRightInputSchema, conf);
+    auto leftHashMapOptions = createHashMapOptions(leftJoinFields, newLeftInputSchema, conf, storageVariant);
+    auto rightHashMapOptions = createHashMapOptions(rightJoinFields, newRightInputSchema, conf, storageVariant);
 
     /// Creating the hash join operator handler and slice store
     auto handlerId = getNextOperatorHandlerId();
@@ -321,11 +234,13 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
             auto& hjSlice = dynamic_cast<HJSlice&>(slice);
             return hjSlice.getHashMapBufferRefForSide(workerThreadId, JoinBuildSideType::Left);
         },
-        [hashMapOptions = leftHashMapOptions](WindowBasedOperatorHandler& handler, AbstractBufferProvider& bufferProvider)
+        [hashMapOptions = leftHashMapOptions, rightValueSize = rightHashMapOptions.valueSize](
+            WindowBasedOperatorHandler& handler, AbstractBufferProvider& bufferProvider)
         {
             const CreateNewHJSliceArgs hashMapSliceArgs{
                 hashMapOptions.keySize,
                 hashMapOptions.valueSize,
+                rightValueSize,
                 hashMapOptions.pageSize,
                 hashMapOptions.numberOfBuckets,
                 &bufferProvider,
@@ -338,10 +253,13 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
             auto& hjSlice = dynamic_cast<HJSlice&>(slice);
             return hjSlice.getHashMapBufferRefForSide(workerThreadId, JoinBuildSideType::Right);
         },
-        [hashMapOptions = rightHashMapOptions](WindowBasedOperatorHandler& handler, AbstractBufferProvider& bufferProvider)
+        [hashMapOptions = rightHashMapOptions, leftValueSize = leftHashMapOptions.valueSize](
+            WindowBasedOperatorHandler& handler, AbstractBufferProvider& bufferProvider)
         {
+            /// keySize/valueSize describe the LEFT side, rightValueSize the right side (see CreateNewHJSliceArgs).
             const CreateNewHJSliceArgs hashMapSliceArgs{
                 hashMapOptions.keySize,
+                leftValueSize,
                 hashMapOptions.valueSize,
                 hashMapOptions.pageSize,
                 hashMapOptions.numberOfBuckets,
@@ -369,24 +287,41 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
         std::unreachable();
     };
 
+    /// S3 (FIXED_ARRAY): fix the bucket-array size to the estimated key cardinality, disabling adaptive sizing.
+    const auto fixedNumberOfBuckets = storageVariant == JoinStorageVariant::FIXED_ARRAY
+        ? std::optional<uint64_t>{conf.joinFixedBuckets.getValue()}
+        : std::nullopt;
     auto handler = std::make_shared<HJOperatorHandler>(
-        inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), conf.maxNumberOfBuckets, createTriggerStrategy());
+        inputOriginIds,
+        outputOriginId,
+        std::move(sliceAndWindowStore),
+        conf.maxNumberOfBuckets,
+        createTriggerStrategy(),
+        buildVariant,
+        probeVariant,
+        probeRanges,
+        fixedNumberOfBuckets);
 
     /// Creating the left and right hash join build operator
+    const auto sharedHashMap = buildVariant == JoinBuildVariant::SHARED_TABLE;
     const HJBuildPhysicalOperator leftBuildOperator{
         handlerId,
         JoinBuildSideType::Left,
         TimeFunction::create(timeStampFieldLeft),
         leftTupleLayout,
         leftHashMapOptions,
-        std::move(sliceStoreRefLeft)};
+        std::move(sliceStoreRefLeft),
+        storageVariant,
+        sharedHashMap};
     const HJBuildPhysicalOperator rightBuildOperator{
         handlerId,
         JoinBuildSideType::Right,
         TimeFunction::create(timeStampFieldRight),
         rightTupleLayout,
         rightHashMapOptions,
-        std::move(sliceStoreRefRight)};
+        std::move(sliceStoreRefRight),
+        storageVariant,
+        sharedHashMap};
 
     /// Creating the hash join probe — select inner or outer probe based on join type
     auto joinSchema = JoinSchema(newLeftInputSchema, newRightInputSchema, physicalOutputSchema);
@@ -457,7 +392,8 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
             leftTupleLayout,
             rightTupleLayout,
             leftHashMapOptions,
-            rightHashMapOptions));
+            rightHashMapOptions,
+            storageVariant));
     }
 
     std::shared_ptr<PhysicalOperatorWrapper> leftLeaf = leftBuildWrapper;

@@ -45,7 +45,8 @@ HJInnerProbePhysicalOperator::HJInnerProbePhysicalOperator(
     std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout,
     std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
     HashMapOptions leftHashMapBasedOptions,
-    HashMapOptions rightHashMapBasedOptions)
+    HashMapOptions rightHashMapBasedOptions,
+    const JoinStorageVariant storageVariant)
     : HJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -54,7 +55,8 @@ HJInnerProbePhysicalOperator::HJInnerProbePhysicalOperator(
           std::move(leftTupleLayout),
           std::move(rightTupleLayout),
           std::move(leftHashMapBasedOptions),
-          std::move(rightHashMapBasedOptions))
+          std::move(rightHashMapBasedOptions),
+          storageVariant)
 {
 }
 
@@ -74,7 +76,18 @@ void HJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordBu
     const nautilus::val<Timestamp> windowStart{readValueFromMemRef<uint64_t>(getMemberRef(windowInfoRef, &WindowInfo::windowStart))};
     const nautilus::val<Timestamp> windowEnd{readValueFromMemRef<uint64_t>(getMemberRef(windowInfoRef, &WindowInfo::windowEnd))};
 
+    const auto rightPageStart
+        = readValueFromMemRef<uint64_t>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightPageStart));
+    const auto rightPageEnd = readValueFromMemRef<uint64_t>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightPageEnd));
     /// The hash map buffers themselves are stored as child buffers of the record buffer, not as raw pointers in the trigger struct
-    performMatchPairsProbe(recordBuffer.getReference(), leftNumberOfHashMaps, rightNumberOfHashMaps, executionCtx, windowStart, windowEnd);
+    performMatchPairsProbe(
+        recordBuffer.getReference(),
+        leftNumberOfHashMaps,
+        rightNumberOfHashMaps,
+        executionCtx,
+        windowStart,
+        windowEnd,
+        rightPageStart,
+        rightPageEnd);
 }
 }

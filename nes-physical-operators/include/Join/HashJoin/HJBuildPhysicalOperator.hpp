@@ -15,6 +15,7 @@
 #pragma once
 #include <memory>
 #include <Interface/BufferRef/TupleBufferRef.hpp>
+#include <Util/StreamJoinKnobs.hpp>
 #include <Interface/PagedVector/PagedVectorRef.hpp>
 #include <Interface/Record.hpp>
 #include <Join/StreamJoinBuildPhysicalOperator.hpp>
@@ -40,11 +41,18 @@ public:
         std::unique_ptr<TimeFunction> timeFunction,
         std::shared_ptr<PagedVectorTupleLayout> tupleLayout,
         HashMapOptions hashMapOptions,
-        std::unique_ptr<SliceStoreRef> sliceStoreRef);
+        std::unique_ptr<SliceStoreRef> sliceStoreRef,
+        JoinStorageVariant storageVariant = JoinStorageVariant::PER_KEY_PAGED,
+        bool sharedHashMap = false);
     void execute(ExecutionContext& ctx, Record& record) const override;
 
 private:
     HashMapOptions hashMapOptions;
+    /// S1-S3: layout of the build-side state. Compile-time constant during Nautilus tracing, so the
+    /// non-selected paths vanish from the compiled build pipeline.
+    JoinStorageVariant storageVariant;
+    /// P3 (SHARED_TABLE): all worker threads insert into one map; inserts are serialized via the map's mutex.
+    bool sharedHashMap;
 };
 
 }

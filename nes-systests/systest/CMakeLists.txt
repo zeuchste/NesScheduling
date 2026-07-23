@@ -89,7 +89,7 @@ if (CODE_COVERAGE)
 endif (CODE_COVERAGE)
 
 # If we are running code coverage, we need to ONLY run the interpreter tests, as otherwise, the code coverage will be 100% for all operators as the compiler traces all branches and operations.
-set(joinStrategies NESTED_LOOP_JOIN HASH_JOIN)
+set(joinStrategies NESTED_LOOP_JOIN HASH_JOIN SORT_MERGE_JOIN INDEX_JOIN)
 # The systest_interpreter and _compiler pass quite quickly, thus, we run them w/ and w/o a slice cache (if ALL_SLICE_CACHE_TESTS is ON)
 foreach (enableSliceCache IN LISTS sliceCacheValues)
     foreach (joinStrategy IN LISTS joinStrategies)
@@ -139,7 +139,7 @@ if (NOT CODE_COVERAGE)
     ## We run all join and aggregation tests with different no. worker threads, different join strategies, and with and w/o slice cache (if ALL_SLICE_CACHE_TESTS is ON)
     foreach (enableSliceCache IN LISTS sliceCacheValues)
         foreach (workerThreads IN ITEMS 1 2 4)
-            foreach (joinStrategy IN ITEMS NESTED_LOOP_JOIN HASH_JOIN)
+            foreach (joinStrategy IN ITEMS NESTED_LOOP_JOIN HASH_JOIN SORT_MERGE_JOIN INDEX_JOIN)
                 ExternalData_Add_Test(test-data
                         NAME systest_join_${workerThreads}_${joinStrategy}_sliceCache_${enableSliceCache}_interpreter
                         COMMAND systest -n 6 --show-query-performance --groups Join --exclude-groups ${SYSTEST_EXCLUDE_GROUPS} --workingDir=${CMAKE_CURRENT_BINARY_DIR}/${workerThreads}_${joinStrategy}_sliceCache_${enableSliceCache}_interpreter_join --data ${EXPANDED_TEST_DATA_PATH}
@@ -167,6 +167,29 @@ if (NOT CODE_COVERAGE)
                     --
                     --worker.query_engine.number_of_worker_threads=${workerThreads} --worker.default_query_execution.execution_mode=COMPILER --worker.number_of_buffers_in_global_buffer_manager=20000 --worker.default_query_execution.slice_cache.enable_slice_cache=${enableSliceCache})
             set_tests_properties(systest_agg_${workerThreads}_sliceCache_${enableSliceCache}_compiler PROPERTIES LABELS "Systest" PROCESSORS ${workerThreads})
+        endforeach ()
+    endforeach ()
+endif (NOT CODE_COVERAGE)
+
+## Design-space matrix for the hash-join knobs (storage S1-S3 x processing P1-P4, lazy trigger):
+## runs the Join test group once per combination; the golden results must be identical across all of them.
+if (NOT CODE_COVERAGE)
+    foreach (joinStorage IN ITEMS PER_KEY_PAGED SHARED_CHAINS FIXED_ARRAY)
+        foreach (joinBuild IN ITEMS LOCAL_TABLES SHARED_TABLE)
+            foreach (joinProbe IN ITEMS SINGLE_TASK TABLE_BROADCAST TASK_PER_PAIR BUCKET_RANGES)
+                ExternalData_Add_Test(test-data
+                        NAME systest_join_knobs_${joinStorage}_${joinBuild}_${joinProbe}
+                        COMMAND systest -n 6 --show-query-performance --groups Join --exclude-groups ${SYSTEST_EXCLUDE_GROUPS} --workingDir=${CMAKE_CURRENT_BINARY_DIR}/knobs_${joinStorage}_${joinBuild}_${joinProbe} --data ${EXPANDED_TEST_DATA_PATH}
+                        --optimizer join_strategy=HASH_JOIN
+                        --
+                        --worker.query_engine.number_of_worker_threads=4
+                        --worker.default_query_execution.execution_mode=INTERPRETER
+                        --worker.number_of_buffers_in_global_buffer_manager=20000
+                        --worker.default_query_execution.join_storage=${joinStorage}
+                        --worker.default_query_execution.join_build=${joinBuild}
+                        --worker.default_query_execution.join_probe=${joinProbe})
+                set_tests_properties(systest_join_knobs_${joinStorage}_${joinBuild}_${joinProbe} PROPERTIES LABELS "Systest;JoinKnobs" PROCESSORS 4)
+            endforeach ()
         endforeach ()
     endforeach ()
 endif (NOT CODE_COVERAGE)

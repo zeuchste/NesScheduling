@@ -25,6 +25,7 @@
 #include <Configurations/Validation/FloatValidation.hpp>
 #include <Configurations/Validation/NumberValidation.hpp>
 #include <Util/ExecutionMode.hpp>
+#include <Util/StreamJoinKnobs.hpp>
 #include <SliceCacheConfiguration.hpp>
 
 namespace NES
@@ -35,6 +36,7 @@ static constexpr auto DEFAULT_PAGED_VECTOR_SIZE = 1024;
 static constexpr auto DEFAULT_OPERATOR_BUFFER_SIZE = 4096;
 static constexpr auto DEFAULT_NUMBER_OF_RECORDS_PER_KEY = 10;
 static constexpr auto DEFAULT_MAX_NUMBER_OF_BUCKETS = 10'000.0;
+static constexpr auto DEFAULT_JOIN_FIXED_BUCKETS = 1024;
 
 class QueryExecutionConfiguration : public BaseConfiguration
 {
@@ -73,6 +75,37 @@ public:
            "Buffer size of a operator e.g. during scan",
            {std::make_shared<NumberValidation>()}};
 
+    /// Design-space knobs for the stream hash join (storage S1-S3, processing P1-P4, trigger T1/T2).
+    EnumOption<JoinStorageVariant> joinStorage
+        = {"join_storage",
+           JoinStorageVariant::PER_KEY_PAGED,
+           "Storage layout of the hash-join build side "
+           "[PER_KEY_PAGED|SHARED_CHAINS|FIXED_ARRAY]."};
+    EnumOption<JoinBuildVariant> joinBuild
+        = {"join_build",
+           JoinBuildVariant::LOCAL_TABLES,
+           "Number of hash-join build tables per window side: one per worker thread or one shared "
+           "[LOCAL_TABLES|SHARED_TABLE]."};
+    EnumOption<JoinProbeVariant> joinProbe
+        = {"join_probe",
+           JoinProbeVariant::SINGLE_TASK,
+           "Granularity of the hash-join probe tasks "
+           "[SINGLE_TASK|TABLE_BROADCAST|TASK_PER_PAIR|BUCKET_RANGES]."};
+    UIntOption joinProbeRanges
+        = {"join_probe_ranges",
+           "0",
+           "Number of bucket-page ranges per table pair for the BUCKET_RANGES probe (0 = number of worker threads).",
+           {std::make_shared<NumberValidation>()}};
+    EnumOption<JoinTriggerVariant> joinTrigger
+        = {"join_trigger",
+           JoinTriggerVariant::LAZY,
+           "When join work happens [LAZY|EAGER]. EAGER is not implemented yet."};
+    UIntOption joinFixedBuckets
+        = {"join_fixed_buckets",
+           std::to_string(DEFAULT_JOIN_FIXED_BUCKETS),
+           "Estimated key cardinality used to size the fixed bucket array of the FIXED_ARRAY join storage variant.",
+           {std::make_shared<NumberValidation>()}};
+
     SliceCacheConfiguration sliceCacheConfiguration = {"slice_cache", "Configuration for the slice cache"};
 
 private:
@@ -85,6 +118,12 @@ private:
             &numberOfRecordsPerKey,
             &maxNumberOfBuckets,
             &operatorBufferSize,
+            &joinStorage,
+            &joinBuild,
+            &joinProbe,
+            &joinProbeRanges,
+            &joinTrigger,
+            &joinFixedBuckets,
             &sliceCacheConfiguration};
     }
 };

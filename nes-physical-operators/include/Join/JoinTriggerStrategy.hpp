@@ -24,18 +24,14 @@ namespace NES
 {
 
 /// Trigger strategy for inner joins and cartesian products.
-/// Emits NxN MATCH_PAIRS tasks: each left slice paired with each right slice.
+/// Yields NxN MATCH_PAIRS work items: each left slice paired with each right slice.
 struct InnerJoinTriggerStrategy
 {
-    static void triggerWindow(
-        const std::vector<std::shared_ptr<Slice>>& allSlices,
-        const WindowInfoAndSequenceNumber& windowInfo,
-        const EmitSlicesFn& emitFn,
-        PipelineExecutionContext* pipelineCtx);
+    static std::vector<ProbeWorkItem> collectProbeWorkItems(const std::vector<std::shared_ptr<Slice>>& allSlices);
 };
 
 /// Trigger strategy for outer joins (left, right, full).
-/// Emits NxN MATCH_PAIRS tasks plus null-fill tasks for the configured sides.
+/// Yields NxN MATCH_PAIRS work items plus null-fill work items for the configured sides.
 /// Template parameters eliminate runtime branching via if constexpr.
 /// - Left outer:  OuterJoinTriggerStrategy<true, false>
 /// - Right outer: OuterJoinTriggerStrategy<false, true>
@@ -43,11 +39,7 @@ struct InnerJoinTriggerStrategy
 template <bool EmitLeftNullFill, bool EmitRightNullFill>
 struct OuterJoinTriggerStrategy
 {
-    static void triggerWindow(
-        const std::vector<std::shared_ptr<Slice>>& allSlices,
-        const WindowInfoAndSequenceNumber& windowInfo,
-        const EmitSlicesFn& emitFn,
-        PipelineExecutionContext* pipelineCtx);
+    static std::vector<ProbeWorkItem> collectProbeWorkItems(const std::vector<std::shared_ptr<Slice>>& allSlices);
 };
 
 }

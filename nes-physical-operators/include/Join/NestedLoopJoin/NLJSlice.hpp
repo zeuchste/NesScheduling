@@ -44,7 +44,8 @@ struct CreateNewNLJSliceArgs final : CreateNewSlicesArguments
 };
 
 /// This class represents a single slice for the NestedLoopJoin. It stores all tuples for the left and right stream.
-class NLJSlice final : public Slice
+/// Also serves as the tuple storage of the index join (IXJSlice extends it with a shared index).
+class NLJSlice : public Slice
 {
 public:
     NLJSlice(
@@ -67,7 +68,7 @@ public:
     /// Moves all tuples in this slice to the PagedVector at 0th index on both sides.
     void combinePagedVectors();
 
-private:
+protected:
     /// This does not really follow our compact-buffer data structure logic
     std::vector<TupleBuffer> leftPagedVectorBuffers;
     std::vector<TupleBuffer> rightPagedVectorBuffers;

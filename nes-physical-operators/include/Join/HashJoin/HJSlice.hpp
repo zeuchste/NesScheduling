@@ -28,18 +28,25 @@ namespace NES
 
 struct CreateNewHJSliceArgs final : CreateNewHashMapSliceArgs
 {
+    /// The base keySize/valueSize describe the LEFT side; rightValueSize the RIGHT side. The sides always share the
+    /// same key layout (the lowering casts both sides' keys to identical types), but their value sizes differ as soon
+    /// as the storage variant stores the tuples inline (SHARED_CHAINS): each side then needs its own entry size.
     CreateNewHJSliceArgs(
         const uint64_t keySize,
         const uint64_t valueSize,
+        const uint64_t rightValueSize,
         const uint64_t pageSize,
         const uint64_t numberOfBuckets,
         AbstractBufferProvider* bufferProvider,
         const JoinBuildSideType joinBuildSide)
-        : CreateNewHashMapSliceArgs{keySize, valueSize, pageSize, numberOfBuckets, bufferProvider}, joinBuildSide(joinBuildSide)
+        : CreateNewHashMapSliceArgs{keySize, valueSize, pageSize, numberOfBuckets, bufferProvider}
+        , rightValueSize(rightValueSize)
+        , joinBuildSide(joinBuildSide)
     {
     }
 
     ~CreateNewHJSliceArgs() override = default;
+    uint64_t rightValueSize;
     JoinBuildSideType joinBuildSide;
 };
 
@@ -48,14 +55,22 @@ struct CreateNewHJSliceArgs final : CreateNewHashMapSliceArgs
 class HJSlice final : public HashMapSlice
 {
 public:
+    /// All hash maps are created eagerly by the HashMapSlice base constructor, so the SHARED_TABLE build variant
+    /// needs no extra pre-creation: routing every worker to map 0 is race-free by construction.
+    /// Right-side maps are re-initialized with rightValueSize when it differs from the left value size.
     HJSlice(
         AbstractBufferProvider& bufferProvider,
         SliceStart sliceStart,
         SliceEnd sliceEnd,
-        const CreateNewHashMapSliceArgs& createNewHashMapSliceArgs,
+        const CreateNewHJSliceArgs& createNewHashMapSliceArgs,
         uint64_t numberOfHashMaps);
     [[nodiscard]] const TupleBuffer* getHashMapBufferRefForSide(WorkerThreadId workerThreadId, const JoinBuildSideType& buildSide) const;
     [[nodiscard]] uint64_t getNumberOfHashMapsForSide() const;
+
+private:
+    /// Value size for right-side maps; the base createNewHashMapSliceArgs (stored sliced in HashMapSlice) keeps the
+    /// left side's sizes.
+    uint64_t rightValueSize;
 };
 
 }
