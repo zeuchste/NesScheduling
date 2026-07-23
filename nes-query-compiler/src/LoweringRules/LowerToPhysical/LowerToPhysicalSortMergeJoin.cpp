@@ -127,11 +127,10 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
     auto makeSliceStoreRef = [&](const JoinBuildSideType side)
     {
         return sliceAndWindowStore->createSliceStoreRef(
-            [side](Slice& slice, const WorkerThreadId workerThreadId) -> void*
+            [side](Slice& slice, const WorkerThreadId workerThreadId) -> const TupleBuffer*
             {
                 const auto& nljSlice = dynamic_cast<NLJSlice&>(slice);
-                /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): the SliceStoreRef callback returns a void* token by contract.
-                return const_cast<TupleBuffer*>(nljSlice.getPagedVectorTupleBufferRef(workerThreadId, side));
+                return nljSlice.getPagedVectorTupleBufferRef(workerThreadId, side);
             },
             [tupleSizeLeft, tupleSizeRight](const WindowBasedOperatorHandler& handler, AbstractBufferProvider& bufferProvider)
             {

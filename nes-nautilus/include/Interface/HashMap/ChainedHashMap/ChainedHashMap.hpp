@@ -78,6 +78,13 @@ public:
     std::span<std::byte> allocateSpaceForVarSized(AbstractBufferProvider* bufferProvider, size_t neededSize);
     AbstractHashMapEntry* insertEntry(HashFunction::HashValue::raw_type hash, AbstractBufferProvider* bufferProvider) override;
 
+    /// Serializes inserts for the SHARED_TABLE join build variant, where all worker threads build into one map.
+    /// The map object is an ephemeral view over the buffer, so the lock lives in the buffer header (spinlock word)
+    /// and is shared by every view. Every other path stays unsynchronized.
+    /// ponytail: coarse per-map spinlock around the whole insert; CAS-based bucket heads if contention matters.
+    static void lockForSharedInsert(const TupleBuffer& mapBuffer);
+    static void unlockAfterSharedInsert(const TupleBuffer& mapBuffer);
+
     [[nodiscard]] uint64_t getTotalNumberOfRecords() const override { return header().numRecords; }
 
     [[nodiscard]] TupleBuffer getPage(uint64_t pageIndex) const;
@@ -119,12 +126,6 @@ protected:
     void appendPage(AbstractBufferProvider* bufferProvider);
     void allocateNewVarSizedPage(AbstractBufferProvider* bufferProvider);
 
-    /// Serializes inserts for the SHARED_TABLE join build variant, where all worker threads build into one map.
-    /// The map object is an ephemeral view over the buffer, so the lock lives in the buffer header (spinlock word)
-    /// and is shared by every view. Every other path stays unsynchronized.
-    /// ponytail: coarse per-map spinlock around the whole insert; CAS-based bucket heads if contention matters.
-    static void lockForSharedInsert(const TupleBuffer& mapBuffer);
-    static void unlockAfterSharedInsert(const TupleBuffer& mapBuffer);
 
 private:
     /// private constructor that takes a pre-filled buffer

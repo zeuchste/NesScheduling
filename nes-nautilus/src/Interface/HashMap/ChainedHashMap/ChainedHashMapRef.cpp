@@ -384,11 +384,11 @@ ChainedHashMapRef::beginRange(const nautilus::val<uint64_t>& pageStart, const na
 {
     const auto clampedEnd = nautilus::invoke(clampedPageEndProxy, tupleBuffer, pageEnd);
     const auto currentEntry = nautilus::invoke(
-        +[](TupleBuffer* buf, const uint64_t pageStartVal, const uint64_t pageEndVal)
+        +[](TupleBuffer* buf, const uint64_t pageStartVal, const uint64_t pageEndVal) -> const std::byte*
         {
             if (pageStartVal >= pageEndVal)
             {
-                return static_cast<const std::byte*>(nullptr);
+                return nullptr;
             }
             const auto chm = ChainedHashMap::load(*buf);
             return chm.getPage(pageStartVal).getAvailableMemoryArea().data();

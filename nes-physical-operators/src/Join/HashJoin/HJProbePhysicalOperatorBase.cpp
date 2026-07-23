@@ -225,6 +225,7 @@ void HJProbePhysicalOperatorBase::performSharedChainsMatchPairsProbe(
 
                 leftHashMap.forEachMatchingEntry(
                     rightEntry,
+                    rightHashMapBuffer.asArg(),
                     [&](const ChainedHashMapRef::ChainedEntryRef& leftEntryRef)
                     {
                         const auto leftRecord = reconstructRecordFromEntry(leftEntryRef, leftHashMapOptions);

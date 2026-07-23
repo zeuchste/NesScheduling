@@ -89,7 +89,7 @@ void HJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) con
         if (sharedHashMap)
         {
             nautilus::invoke(
-                +[](HashMap* map) -> void { dynamic_cast<ChainedHashMap*>(map)->lockForSharedInsert(); }, hashMapPtr);
+                +[](const TupleBuffer* mapBuffer) -> void { ChainedHashMap::lockForSharedInsert(*mapBuffer); }, hashMapBuffer.asArg());
         }
 
         if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
@@ -99,7 +99,7 @@ void HJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) con
             if (sharedHashMap)
             {
                 nautilus::invoke(
-                    +[](HashMap* map) -> void { dynamic_cast<ChainedHashMap*>(map)->unlockAfterSharedInsert(); }, hashMapPtr);
+                    +[](const TupleBuffer* mapBuffer) -> void { ChainedHashMap::unlockAfterSharedInsert(*mapBuffer); }, hashMapBuffer.asArg());
             }
             return;
         }
@@ -152,7 +152,7 @@ void HJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) con
         if (sharedHashMap)
         {
             nautilus::invoke(
-                +[](HashMap* map) -> void { dynamic_cast<ChainedHashMap*>(map)->unlockAfterSharedInsert(); }, hashMapPtr);
+                +[](const TupleBuffer* mapBuffer) -> void { ChainedHashMap::unlockAfterSharedInsert(*mapBuffer); }, hashMapBuffer.asArg());
         }
     }
 }
