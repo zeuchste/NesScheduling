@@ -41,11 +41,14 @@ namespace NES
 /// SORT = SortMergeJoin (comparison sort, O(n log n)); HASH_GROUP = CompactHashJoin (histogram + prefix sum +
 /// scatter into bucket-contiguous runs, O(n)); RUN_MERGE = RunMergeJoin (cache-sized sorted runs + k-way
 /// merge, O(n log C + n log k) — the amortizable middle ground of the build-time axis).
+/// RUN_HASH = RunHashJoin (per-run sealed bucket-grouped tables over the left side, right side
+/// streamed against their union — the only kernel with both an append-only build and an empty trigger).
 enum class SMJKernel : uint8_t
 {
     SORT,
     HASH_GROUP,
-    RUN_MERGE
+    RUN_MERGE,
+    RUN_HASH
 };
 
 class SMJInnerProbePhysicalOperator final : public NLJProbePhysicalOperatorBase

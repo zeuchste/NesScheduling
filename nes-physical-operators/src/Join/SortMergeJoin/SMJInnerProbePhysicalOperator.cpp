@@ -73,6 +73,16 @@ struct SMJSortState
     /// CompactHashJoin (hash-grouping kernel): per-side bucket-contiguous runs + prefix offsets, shared mask.
     std::vector<uint64_t> offsets[2];
     uint64_t buckets{0};
+    /// RunHashJoin: per-run sealed bucket-grouped directories over the left side. Each run of
+    /// RMJ_RUN_SIZE entries is grouped independently (own bucket count sized to the run); the probe
+    /// streams the right side, one bucket lookup per sealed run.
+    struct RhjRun
+    {
+        uint64_t start;
+        uint64_t buckets;
+        std::vector<uint64_t> offsets;
+    };
+    std::vector<RhjRun> rhjRuns;
     /// join_prefilter=BLOOM (one-sided kernels only): negative directory over the left side. Two probes
     /// derived from the stored 64-bit hash, ~8 bits per key; a right entry whose bits miss skips the
     /// directory probe entirely — the win scales with the miss rate.
@@ -242,6 +252,58 @@ uint64_t rmjOneSidedSortAndMerge(SMJSortState* state, const uint64_t useBloom)
 {
     rmjSortRuns(state->sides[0]);
     return oneSidedSortedMerge(state, useBloom);
+}
+
+/// RunHashJoin kernel: group the left side per run (stage A: at trigger, chunk-local and independent —
+/// the amortizable structure of the per-run column), then stream the right side against the union of
+/// the sealed runs: one bucket lookup per run per probe entry.
+uint64_t rhjGroupAndProbe(SMJSortState* state)
+{
+    auto& left = state->sides[0];
+    const uint64_t n = left.size();
+    for (uint64_t lo = 0; lo < n; lo += RMJ_RUN_SIZE)
+    {
+        const uint64_t hi = std::min(lo + RMJ_RUN_SIZE, n);
+        uint64_t buckets = 64;
+        while (buckets < hi - lo)
+        {
+            buckets <<= 1;
+        }
+        SMJSortState::RhjRun run{lo, buckets, {}};
+        const uint64_t mask = buckets - 1;
+        run.offsets.assign(buckets + 1, 0);
+        for (uint64_t i = lo; i < hi; ++i)
+        {
+            ++run.offsets[(left[i].first & mask) + 1];
+        }
+        for (uint64_t b = 1; b <= buckets; ++b)
+        {
+            run.offsets[b] += run.offsets[b - 1];
+        }
+        std::vector<std::pair<uint64_t, uint64_t>> grouped(hi - lo);
+        std::vector<uint64_t> cursor(run.offsets.begin(), run.offsets.end() - 1);
+        for (uint64_t i = lo; i < hi; ++i)
+        {
+            grouped[cursor[left[i].first & mask]++] = left[i];
+        }
+        std::copy(grouped.begin(), grouped.end(), left.begin() + lo);
+        state->rhjRuns.push_back(std::move(run));
+    }
+    for (const auto& [hash, rightPosition] : state->sides[1])
+    {
+        for (const auto& run : state->rhjRuns)
+        {
+            const uint64_t b = hash & (run.buckets - 1);
+            for (uint64_t i = run.start + run.offsets[b]; i < run.start + run.offsets[b + 1]; ++i)
+            {
+                if (left[i].first == hash)
+                {
+                    state->candidatePairs.emplace_back(left[i].second, rightPosition);
+                }
+            }
+        }
+    }
+    return state->candidatePairs.size();
 }
 
 /// Hash-grouping one-sided variant: bucket the left side only; each right entry scans its left bucket region.
@@ -710,6 +772,7 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
                     nautilus::invoke(rmjMarkReady, state);
                     break;
                 case SMJKernel::SORT:
+                case SMJKernel::RUN_HASH: /// unreachable: RUN_HASH is forced to a single task by the lowering
                     nautilus::invoke(smjMarkReady, state);
                     break;
             }
@@ -786,6 +849,8 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
     {
         switch (kernel)
         {
+            case SMJKernel::RUN_HASH:
+                return nautilus::invoke(rhjGroupAndProbe, state);
             case SMJKernel::HASH_GROUP:
                 return oneSided ? nautilus::invoke(chjOneSidedGroupAndMerge, state, nautilus::val<uint64_t>(bloomFilter ? 1 : 0))
                                 : nautilus::invoke(chjGroupAndMerge, state);

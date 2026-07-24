@@ -80,12 +80,16 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             case JoinImplementation::RUN_MERGE_JOIN:
                 kernel = SMJKernel::RUN_MERGE;
                 break;
+            case JoinImplementation::RUN_HASH_JOIN:
+                kernel = SMJKernel::RUN_HASH;
+                break;
             default:
                 break;
         }
     }
-    const bool oneSided = conf.joinDirectorySides.getValue() == JoinDirectorySides::ONE_SIDED;
-    const bool perSliceRuns = conf.joinStateScope.getValue() == JoinStateScope::PER_SLICE;
+    /// RUN_HASH is one-sided by construction and runs single-task, per-window only.
+    const bool oneSided = conf.joinDirectorySides.getValue() == JoinDirectorySides::ONE_SIDED or kernel == SMJKernel::RUN_HASH;
+    const bool perSliceRuns = conf.joinStateScope.getValue() == JoinStateScope::PER_SLICE and kernel != SMJKernel::RUN_HASH;
     const bool bloomFilter = conf.joinPrefilter.getValue() == JoinPrefilter::BLOOM;
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
     const auto memoryLayoutType = traitSet.get<MemoryLayoutTypeTrait>()->memoryLayout;

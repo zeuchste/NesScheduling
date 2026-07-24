@@ -149,6 +149,9 @@ LogicalOperator DecideJoinTypesRule::apply(const LogicalOperator& logicalOperato
                 case StreamJoinStrategy::RUN_MERGE_JOIN:
                     implementation = JoinImplementation::RUN_MERGE_JOIN;
                     break;
+                case StreamJoinStrategy::RUN_HASH_JOIN:
+                    implementation = JoinImplementation::RUN_HASH_JOIN;
+                    break;
                 default:
                     break;
             }

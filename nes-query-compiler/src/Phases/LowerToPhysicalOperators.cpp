@@ -63,6 +63,7 @@ resolveLoweringRule(const LogicalOperator& logicalOperator, const LoweringRuleRe
             }
             case JoinImplementation::COMPACT_HASH_JOIN: /// same physical operator as the sort-merge join, hash-grouping kernel
             case JoinImplementation::RUN_MERGE_JOIN: /// same physical operator, sorted-runs + merge kernel
+            case JoinImplementation::RUN_HASH_JOIN: /// same physical operator, per-run sealed hash tables
             case JoinImplementation::SORT_MERGE_JOIN: {
                 if (auto ruleOptional = LoweringRuleRegistry::instance().create(std::string("SortMergeJoin"), registryArgument))
                 {
