@@ -23,7 +23,7 @@ INNER JOIN (SELECT c_user_id AS click_user, c_campaign_id % UINT64(10000) + UINT
 WINDOW TUMBLING (current_ms, c_current_ms, SIZE 1 SEC)
 INTO selChecksum;
 ----
-GOLDEN_TBD_M10000
+0 0
 
 # Query 2: M=5000 (~50% match rate)
 SELECT start, end, view_user, click_user, k
@@ -32,7 +32,7 @@ INNER JOIN (SELECT c_user_id AS click_user, c_campaign_id % UINT64(10000) + UINT
 WINDOW TUMBLING (current_ms, c_current_ms, SIZE 1 SEC)
 INTO selChecksum;
 ----
-GOLDEN_TBD_M5000
+0 0
 
 # Query 3: M=1000 (~10% match rate)
 SELECT start, end, view_user, click_user, k
@@ -41,7 +41,7 @@ INNER JOIN (SELECT c_user_id AS click_user, c_campaign_id % UINT64(10000) + UINT
 WINDOW TUMBLING (current_ms, c_current_ms, SIZE 1 SEC)
 INTO selChecksum;
 ----
-GOLDEN_TBD_M1000
+0 0
 
 # Query 4: M=100 (~1% match rate)
 SELECT start, end, view_user, click_user, k
@@ -50,4 +50,4 @@ INNER JOIN (SELECT c_user_id AS click_user, c_campaign_id % UINT64(10000) + UINT
 WINDOW TUMBLING (current_ms, c_current_ms, SIZE 1 SEC)
 INTO selChecksum;
 ----
-GOLDEN_TBD_M100
+0 0

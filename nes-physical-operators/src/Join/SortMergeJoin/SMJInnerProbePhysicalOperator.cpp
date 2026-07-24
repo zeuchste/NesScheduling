@@ -38,6 +38,7 @@
 #include <SliceStore/Slice.hpp>
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
 #include <Time/Timestamp.hpp>
+#include <ErrorHandling.hpp>
 #include <ExecutionContext.hpp>
 #include <function.hpp>
 #include <static.hpp>
@@ -47,11 +48,17 @@
 namespace NES
 {
 
-/// Defined in NLJProbePhysicalOperatorBase.cpp; resolves a slice end to its NLJSlice via the handler.
-NLJSlice* getNLJSliceRefFromEndProxy(OperatorHandler* ptrOpHandler, SliceEnd sliceEnd);
-
 namespace
 {
+/// Resolves a slice end to its NLJSlice via the handler (mirror of the NLJ probe's internal proxy).
+NLJSlice* smjSliceFromEnd(OperatorHandler* ptrOpHandler, const SliceEnd sliceEnd)
+{
+    PRECONDITION(ptrOpHandler != nullptr, "op handler context should not be null");
+    const auto* opHandler = dynamic_cast<NLJOperatorHandler*>(ptrOpHandler);
+    auto slice = opHandler->getSliceAndWindowStore().getSliceBySliceEnd(sliceEnd);
+    INVARIANT(slice.has_value(), "Could not find a slice for slice end {}", sliceEnd);
+    return dynamic_cast<NLJSlice*>(slice.value().get());
+}
 /// Trigger-time sort state: one (hash, position) run per side, sorted by hash so that equal keys are adjacent,
 /// plus the candidate pairs produced by the merge pass over the sorted runs.
 /// With range-parallel probing (rangeCount > 1) the state is shared by all range tasks of a window: the first
@@ -551,8 +558,8 @@ void SMJInnerProbePhysicalOperator::performPerSliceJoin(
     const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
     const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
     const auto handlerRef = executionCtx.getGlobalOperatorHandler(operatorHandlerId);
-    const auto leftSliceRef = nautilus::invoke(getNLJSliceRefFromEndProxy, handlerRef, sliceIdLeft);
-    const auto rightSliceRef = nautilus::invoke(getNLJSliceRefFromEndProxy, handlerRef, sliceIdRight);
+    const auto leftSliceRef = nautilus::invoke(smjSliceFromEnd, handlerRef, sliceIdLeft);
+    const auto rightSliceRef = nautilus::invoke(smjSliceFromEnd, handlerRef, sliceIdRight);
 
     const auto buildOrWaitRun = [&](const nautilus::val<NLJSlice*>& sliceRef,
                                     const PagedVectorRef& pagedVector,
