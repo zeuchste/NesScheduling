@@ -69,6 +69,18 @@ enum class JoinDirectorySides : uint8_t
     ONE_SIDED
 };
 
+/// The directory-scope knob: whether the trigger-time join kernels build their directory per window
+/// (rebuilt for every window and slice pair) or per slice (built once per slice, shared by all
+/// overlapping windows — the join analogue of window slicing for aggregation).
+enum class JoinStateScope : uint8_t
+{
+    /// Default: directory state lives per probe task (per window / slice pair).
+    PER_WINDOW,
+    /// Sorted (hash, position) runs are cached on the slice itself: built once by the first probe task
+    /// touching a (slice, side), reused by every slice pair of every overlapping window.
+    PER_SLICE
+};
+
 /// The two trigger variants (T1/T2): when join work happens.
 enum class JoinTriggerVariant : uint8_t
 {

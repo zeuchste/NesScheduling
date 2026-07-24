@@ -31,6 +31,7 @@
 #include <Interface/Record.hpp>
 #include <Interface/TimestampRef.hpp>
 #include <Join/NestedLoopJoin/NLJOperatorHandler.hpp>
+#include <Join/NestedLoopJoin/NLJSlice.hpp>
 #include <Join/StreamJoinProbePhysicalOperator.hpp>
 #include <Join/StreamJoinUtil.hpp>
 #include <Operators/Windows/WindowMetaData.hpp>
@@ -45,6 +46,9 @@
 
 namespace NES
 {
+
+/// Defined in NLJProbePhysicalOperatorBase.cpp; resolves a slice end to its NLJSlice via the handler.
+NLJSlice* getNLJSliceRefFromEndProxy(OperatorHandler* ptrOpHandler, SliceEnd sliceEnd);
 
 namespace
 {
@@ -365,12 +369,13 @@ void smjFreeRangePairs(const std::vector<std::pair<uint64_t, uint64_t>>* pairs)
     delete pairs;
 }
 
-/// Merges two fully sorted sides into the candidate-pair list. The merge is plain C++ over the
+/// Merges two fully sorted runs into a candidate-pair list. The merge is plain C++ over the
 /// (hash, position) index pairs; only the per-pair record reads and the predicate run in Nautilus.
-uint64_t mergeSortedSides(SMJSortState* state)
+void mergeRuns(
+    const std::vector<std::pair<uint64_t, uint64_t>>& left,
+    const std::vector<std::pair<uint64_t, uint64_t>>& right,
+    std::vector<std::pair<uint64_t, uint64_t>>& out)
 {
-    const auto& left = state->sides[0];
-    const auto& right = state->sides[1];
     size_t leftPos = 0;
     size_t rightPos = 0;
     while (leftPos < left.size() and rightPos < right.size())
@@ -399,28 +404,58 @@ uint64_t mergeSortedSides(SMJSortState* state)
             {
                 for (auto j = rightPos; j < rightRunEnd; ++j)
                 {
-                    state->candidatePairs.emplace_back(left[i].second, right[j].second);
+                    out.emplace_back(left[i].second, right[j].second);
                 }
             }
             leftPos = leftRunEnd;
             rightPos = rightRunEnd;
         }
     }
-    return state->candidatePairs.size();
 }
 
 uint64_t smjSortAndMerge(SMJSortState* state)
 {
     std::ranges::sort(state->sides[0]);
     std::ranges::sort(state->sides[1]);
-    return mergeSortedSides(state);
+    mergeRuns(state->sides[0], state->sides[1], state->candidatePairs);
+    return state->candidatePairs.size();
 }
 
 uint64_t rmjSortAndMerge(SMJSortState* state)
 {
     rmjSortRuns(state->sides[0]);
     rmjSortRuns(state->sides[1]);
-    return mergeSortedSides(state);
+    mergeRuns(state->sides[0], state->sides[1], state->candidatePairs);
+    return state->candidatePairs.size();
+}
+
+/// join_state_scope=PER_SLICE proxies: claim/append/seal/wait on the slice-owned sorted runs, then merge
+/// the left run of the left slice with the right run of the right slice into a task-local pair list.
+uint64_t sliceTryClaimRun(NLJSlice* slice, const uint64_t side)
+{
+    return slice->tryClaimSortedRun(side) ? 1 : 0;
+}
+
+void sliceAppendRunEntry(NLJSlice* slice, const uint64_t side, const uint64_t hash, const uint64_t position)
+{
+    slice->appendSortedRunEntry(side, hash, position);
+}
+
+void sliceSealRun(NLJSlice* slice, const uint64_t side)
+{
+    slice->sealSortedRun(side);
+}
+
+void sliceWaitRun(const NLJSlice* slice, const uint64_t side)
+{
+    slice->waitSortedRunReady(side);
+}
+
+std::vector<std::pair<uint64_t, uint64_t>>* sliceMergeRuns(const NLJSlice* leftSlice, const NLJSlice* rightSlice)
+{
+    auto* pairs = new std::vector<std::pair<uint64_t, uint64_t>>();
+    mergeRuns(leftSlice->getSortedRun(0), rightSlice->getSortedRun(1), *pairs);
+    return pairs;
 }
 
 uint64_t smjPairLeft(const SMJSortState* state, const uint64_t pair)
@@ -450,7 +485,8 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
     std::shared_ptr<HashFunction> hashFunction,
     const SMJKernel kernel,
-    const bool oneSided)
+    const bool oneSided,
+    const bool perSliceRuns)
     : NLJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -463,6 +499,7 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     , hashFunction(std::move(hashFunction))
     , kernel(kernel)
     , oneSided(oneSided)
+    , perSliceRuns(perSliceRuns)
 {
 }
 
@@ -490,7 +527,77 @@ void SMJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordB
     const PagedVectorRef leftPagedVector(BorrowedNautilusBuffer::from(leftPagedVectorRef), leftTupleLayout);
     const PagedVectorRef rightPagedVector(BorrowedNautilusBuffer::from(rightPagedVectorRef), rightTupleLayout);
 
+    if (perSliceRuns)
+    {
+        performPerSliceJoin(leftPagedVector, rightPagedVector, executionCtx, windowStart, windowEnd, sliceIdLeft, sliceIdRight);
+        return;
+    }
     performSortMergeJoin(leftPagedVector, rightPagedVector, executionCtx, windowStart, windowEnd, rangeIndex, rangeCount);
+}
+
+/// join_state_scope=PER_SLICE: the sorted (hash, position) run of each (slice, side) is built exactly once
+/// — by the first probe task that touches it — and cached on the slice, so every slice-pair task of every
+/// overlapping window merges cached runs instead of re-extracting and re-sorting. All three kernels share
+/// this path (the run is the directory); single-task probe only (the lowering forces rangeCount = 1).
+void SMJInnerProbePhysicalOperator::performPerSliceJoin(
+    const PagedVectorRef& leftPagedVector,
+    const PagedVectorRef& rightPagedVector,
+    ExecutionContext& executionCtx,
+    const nautilus::val<Timestamp>& windowStart,
+    const nautilus::val<Timestamp>& windowEnd,
+    const nautilus::val<SliceEnd>& sliceIdLeft,
+    const nautilus::val<SliceEnd>& sliceIdRight) const
+{
+    const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
+    const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
+    const auto handlerRef = executionCtx.getGlobalOperatorHandler(operatorHandlerId);
+    const auto leftSliceRef = nautilus::invoke(getNLJSliceRefFromEndProxy, handlerRef, sliceIdLeft);
+    const auto rightSliceRef = nautilus::invoke(getNLJSliceRefFromEndProxy, handlerRef, sliceIdRight);
+
+    const auto buildOrWaitRun = [&](const nautilus::val<NLJSlice*>& sliceRef,
+                                    const PagedVectorRef& pagedVector,
+                                    const std::vector<Record::RecordFieldIdentifier>& keyFieldNames,
+                                    const uint64_t side)
+    {
+        const auto claimed = nautilus::invoke(sliceTryClaimRun, sliceRef, nautilus::val<uint64_t>(side));
+        if (claimed == 1)
+        {
+            nautilus::val<uint64_t> position = 0;
+            for (auto it = pagedVector.begin(); it != pagedVector.end(); ++it)
+            {
+                const auto record = *it;
+                std::vector<VarVal> keyValues;
+                for (nautilus::static_val<uint64_t> i = 0; i < keyFieldNames.size(); ++i)
+                {
+                    keyValues.emplace_back(record.read(keyFieldNames[i]));
+                }
+                const auto hash = hashFunction->calculate(keyValues);
+                nautilus::invoke(sliceAppendRunEntry, sliceRef, nautilus::val<uint64_t>(side), hash, position);
+                ++position;
+            }
+            nautilus::invoke(sliceSealRun, sliceRef, nautilus::val<uint64_t>(side));
+        }
+        else
+        {
+            nautilus::invoke(sliceWaitRun, sliceRef, nautilus::val<uint64_t>(side));
+        }
+    };
+    buildOrWaitRun(leftSliceRef, leftPagedVector, leftKeyFieldNames, 0);
+    buildOrWaitRun(rightSliceRef, rightPagedVector, rightKeyFieldNames, 1);
+
+    const auto pairs = nautilus::invoke(sliceMergeRuns, leftSliceRef, rightSliceRef);
+    const auto numberOfPairs = nautilus::invoke(smjRangePairCount, pairs);
+    for (nautilus::val<uint64_t> pair = 0; pair < numberOfPairs; ++pair)
+    {
+        const auto leftRecord = leftPagedVector.at(nautilus::invoke(smjRangePairLeft, pairs, pair));
+        const auto rightRecord = rightPagedVector.at(nautilus::invoke(smjRangePairRight, pairs, pair));
+        auto joinedRecord = createJoinedRecord(leftRecord, rightRecord, windowStart, windowEnd, leftFields, rightFields);
+        if (joinFunction.execute(joinedRecord, executionCtx.pipelineMemoryProvider.arena))
+        {
+            executeChild(executionCtx, joinedRecord);
+        }
+    }
+    nautilus::invoke(smjFreeRangePairs, pairs);
 }
 
 void SMJInnerProbePhysicalOperator::performSortMergeJoin(

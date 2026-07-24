@@ -101,6 +101,11 @@ public:
            JoinDirectorySides::BOTH,
            "Sides the trigger-time join kernels build their directory over [BOTH|ONE_SIDED]. ONE_SIDED "
            "builds the directory over the left side only and streams the right side against it."};
+    EnumOption<JoinStateScope> joinStateScope
+        = {"join_state_scope",
+           JoinStateScope::PER_WINDOW,
+           "Scope of the trigger-time join directory [PER_WINDOW|PER_SLICE]. PER_SLICE caches sorted runs "
+           "on the slice, shared across all overlapping windows (sliding-window amortization)."};
     EnumOption<JoinTriggerVariant> joinTrigger
         = {"join_trigger",
            JoinTriggerVariant::LAZY,
@@ -128,6 +133,7 @@ private:
             &joinProbe,
             &joinProbeRanges,
             &joinDirectorySides,
+            &joinStateScope,
             &joinTrigger,
             &joinFixedBuckets,
             &sliceCacheConfiguration};

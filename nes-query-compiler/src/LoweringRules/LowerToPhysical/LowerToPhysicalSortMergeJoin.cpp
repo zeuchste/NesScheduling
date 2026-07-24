@@ -85,6 +85,7 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
         }
     }
     const bool oneSided = conf.joinDirectorySides.getValue() == JoinDirectorySides::ONE_SIDED;
+    const bool perSliceRuns = conf.joinStateScope.getValue() == JoinStateScope::PER_SLICE;
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
     const auto memoryLayoutType = traitSet.get<MemoryLayoutTypeTrait>()->memoryLayout;
     PRECONDITION(std::ranges::size(*outputOriginIds) == 1, "Expected one output origin id");
@@ -167,8 +168,10 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
         std::move(sliceAndWindowStore),
         InnerJoinTriggerStrategy{},
         /// SMJ range-parallel merge: k hash-range probe tasks per window when the range probe is selected.
-        /// One-sided kernels are single-task probes: the right-side stream is not range-partitionable.
-        not oneSided and conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES ? conf.joinProbeRanges.getValue() : 1);
+        /// One-sided and per-slice kernels are single-task probes.
+        not oneSided and not perSliceRuns and conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES
+            ? conf.joinProbeRanges.getValue()
+            : 1);
 
     const auto handlerId = getNextOperatorHandlerId();
     const NLJBuildPhysicalOperator leftBuildOperator{
@@ -212,7 +215,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             rightKeyFieldNames,
             std::make_shared<MurMur3HashFunction>(),
             kernel,
-            oneSided),
+            oneSided,
+            perSliceRuns),
         physicalOutputSchema,
         physicalOutputSchema,
         memoryLayoutType,

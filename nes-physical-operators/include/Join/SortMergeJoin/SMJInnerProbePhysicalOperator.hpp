@@ -62,7 +62,8 @@ public:
         std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
         std::shared_ptr<HashFunction> hashFunction,
         SMJKernel kernel = SMJKernel::SORT,
-        bool oneSided = false);
+        bool oneSided = false,
+        bool perSliceRuns = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -86,6 +87,18 @@ private:
     /// ONE_SIDED directory-sides knob: build the directory over the left side only and stream the right
     /// side against it. Single-task probe only (the lowering forces rangeCount = 1 for one-sided kernels).
     bool oneSided;
+    /// join_state_scope=PER_SLICE: sorted runs cached on the NLJSlice, shared across overlapping windows.
+    /// All three kernels use the sorted-run mechanism under this scope; single-task probe only.
+    bool perSliceRuns;
+
+    void performPerSliceJoin(
+        const PagedVectorRef& leftPagedVector,
+        const PagedVectorRef& rightPagedVector,
+        ExecutionContext& executionCtx,
+        const nautilus::val<Timestamp>& windowStart,
+        const nautilus::val<Timestamp>& windowEnd,
+        const nautilus::val<SliceEnd>& sliceIdLeft,
+        const nautilus::val<SliceEnd>& sliceIdRight) const;
 };
 
 }

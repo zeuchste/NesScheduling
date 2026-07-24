@@ -14,6 +14,9 @@
 
 #include <Join/NestedLoopJoin/NLJSlice.hpp>
 
+#include <algorithm>
+#include <thread>
+
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -151,4 +154,35 @@ void NLJSlice::combinePagedVectors()
         rightPagedVectorBuffers.erase(rightPagedVectorBuffers.begin() + 1, rightPagedVectorBuffers.end());
     }
 }
+
+bool NLJSlice::tryClaimSortedRun(const uint64_t side)
+{
+    int expected = 0;
+    return sortedRunPhase[side].compare_exchange_strong(expected, 1);
+}
+
+void NLJSlice::appendSortedRunEntry(const uint64_t side, const uint64_t hash, const uint64_t position)
+{
+    sortedRuns[side].emplace_back(hash, position);
+}
+
+void NLJSlice::sealSortedRun(const uint64_t side)
+{
+    std::ranges::sort(sortedRuns[side]);
+    sortedRunPhase[side].store(2, std::memory_order_release);
+}
+
+void NLJSlice::waitSortedRunReady(const uint64_t side) const
+{
+    while (sortedRunPhase[side].load(std::memory_order_acquire) != 2)
+    {
+        std::this_thread::yield();
+    }
+}
+
+const std::vector<std::pair<uint64_t, uint64_t>>& NLJSlice::getSortedRun(const uint64_t side) const
+{
+    return sortedRuns[side];
+}
+
 }
