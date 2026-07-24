@@ -37,6 +37,17 @@ namespace NES
 /// comparisons. Build side and slices are shared with the nested-loop join (append-only paged vectors).
 /// ponytail: sorts (hash, position) index pairs via std::sort in a proxy call; materialized, order-preserving
 /// key-encoded runs (SIMD-sortable) are the upgrade path.
+/// The trigger-time kernel of the append-only join family sharing this operator:
+/// SORT = SortMergeJoin (comparison sort, O(n log n)); HASH_GROUP = CompactHashJoin (histogram + prefix sum +
+/// scatter into bucket-contiguous runs, O(n)); RUN_MERGE = RunMergeJoin (cache-sized sorted runs + k-way
+/// merge, O(n log C + n log k) — the amortizable middle ground of the build-time axis).
+enum class SMJKernel : uint8_t
+{
+    SORT,
+    HASH_GROUP,
+    RUN_MERGE
+};
+
 class SMJInnerProbePhysicalOperator final : public NLJProbePhysicalOperatorBase
 {
 public:
@@ -50,7 +61,8 @@ public:
         std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
         std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
         std::shared_ptr<HashFunction> hashFunction,
-        bool hashGrouping = false);
+        SMJKernel kernel = SMJKernel::SORT,
+        bool oneSided = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -70,9 +82,10 @@ private:
         const nautilus::val<uint64_t>& rangeCount) const;
 
     std::shared_ptr<HashFunction> hashFunction;
-    /// CompactHashJoin: replace the trigger-time sort with O(n) hash grouping (histogram + prefix sum +
-    /// scatter into bucket-contiguous runs); merge compares full hashes inside each bucket.
-    bool hashGrouping;
+    SMJKernel kernel;
+    /// ONE_SIDED directory-sides knob: build the directory over the left side only and stream the right
+    /// side against it. Single-task probe only (the lowering forces rangeCount = 1 for one-sided kernels).
+    bool oneSided;
 };
 
 }

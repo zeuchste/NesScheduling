@@ -133,23 +133,31 @@ LogicalOperator DecideJoinTypesRule::apply(const LogicalOperator& logicalOperato
         {
             /// Equi-join: pick the configured key-based implementation. The sort-merge (A2) and index (A4)
             /// variants support inner joins only; outer joins fall back to the hash join with a warning.
+            /// The inner-join-only strategies (sort-merge, index, compact-hash, run-merge); outer joins fall back.
             auto implementation = JoinImplementation::HASH_JOIN;
-            if (this->joinStrategy == StreamJoinStrategy::SORT_MERGE_JOIN or this->joinStrategy == StreamJoinStrategy::INDEX_JOIN
-                or this->joinStrategy == StreamJoinStrategy::COMPACT_HASH_JOIN)
+            switch (this->joinStrategy)
             {
-                if (isOuterJoin(joinOperator.value()->getJoinType()))
-                {
-                    NES_WARNING(
-                        "The configured sort-merge/index/compact-hash join strategy supports inner joins only; falling back to the "
-                        "hash join for operator {}",
-                        logicalOperator);
-                }
-                else
-                {
-                    implementation = this->joinStrategy == StreamJoinStrategy::SORT_MERGE_JOIN ? JoinImplementation::SORT_MERGE_JOIN
-                        : this->joinStrategy == StreamJoinStrategy::INDEX_JOIN                 ? JoinImplementation::INDEX_JOIN
-                                                                                               : JoinImplementation::COMPACT_HASH_JOIN;
-                }
+                case StreamJoinStrategy::SORT_MERGE_JOIN:
+                    implementation = JoinImplementation::SORT_MERGE_JOIN;
+                    break;
+                case StreamJoinStrategy::INDEX_JOIN:
+                    implementation = JoinImplementation::INDEX_JOIN;
+                    break;
+                case StreamJoinStrategy::COMPACT_HASH_JOIN:
+                    implementation = JoinImplementation::COMPACT_HASH_JOIN;
+                    break;
+                case StreamJoinStrategy::RUN_MERGE_JOIN:
+                    implementation = JoinImplementation::RUN_MERGE_JOIN;
+                    break;
+                default:
+                    break;
+            }
+            if (implementation != JoinImplementation::HASH_JOIN and isOuterJoin(joinOperator.value()->getJoinType()))
+            {
+                NES_WARNING(
+                    "The configured join strategy supports inner joins only; falling back to the hash join for operator {}",
+                    logicalOperator);
+                implementation = JoinImplementation::HASH_JOIN;
             }
             tryInsert(traitSet, JoinImplementationTypeTrait{implementation});
         }

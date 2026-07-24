@@ -62,6 +62,7 @@ resolveLoweringRule(const LogicalOperator& logicalOperator, const LoweringRuleRe
                 throw UnknownOptimizerRule("Lowering rule for logical operator '{}' can't be resolved", logicalOperator.getName());
             }
             case JoinImplementation::COMPACT_HASH_JOIN: /// same physical operator as the sort-merge join, hash-grouping kernel
+            case JoinImplementation::RUN_MERGE_JOIN: /// same physical operator, sorted-runs + merge kernel
             case JoinImplementation::SORT_MERGE_JOIN: {
                 if (auto ruleOptional = LoweringRuleRegistry::instance().create(std::string("SortMergeJoin"), registryArgument))
                 {

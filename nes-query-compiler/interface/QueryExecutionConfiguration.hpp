@@ -96,6 +96,11 @@ public:
            "0",
            "Number of bucket-page ranges per table pair for the BUCKET_RANGES probe (0 = number of worker threads).",
            {std::make_shared<NumberValidation>()}};
+    EnumOption<JoinDirectorySides> joinDirectorySides
+        = {"join_directory_sides",
+           JoinDirectorySides::BOTH,
+           "Sides the trigger-time join kernels build their directory over [BOTH|ONE_SIDED]. ONE_SIDED "
+           "builds the directory over the left side only and streams the right side against it."};
     EnumOption<JoinTriggerVariant> joinTrigger
         = {"join_trigger",
            JoinTriggerVariant::LAZY,
@@ -122,6 +127,7 @@ private:
             &joinBuild,
             &joinProbe,
             &joinProbeRanges,
+            &joinDirectorySides,
             &joinTrigger,
             &joinFixedBuckets,
             &sliceCacheConfiguration};

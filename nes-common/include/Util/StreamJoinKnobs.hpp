@@ -58,6 +58,17 @@ enum class JoinProbeVariant : uint8_t
     BUCKET_RANGES
 };
 
+/// The directory-sides knob: whether the trigger-time join kernels (sort-merge, compact-hash, run-merge)
+/// build their directory over both sides or over the left side only, streaming the right side against it.
+enum class JoinDirectorySides : uint8_t
+{
+    /// Default: directory (sorted run / bucket grouping) built over both sides, merged symmetrically.
+    BOTH,
+    /// Asymmetric: directory over the left side only; the right side is scanned once, each entry
+    /// probing the left directory. Halves the directory-build cost of the trigger.
+    ONE_SIDED
+};
+
 /// The two trigger variants (T1/T2): when join work happens.
 enum class JoinTriggerVariant : uint8_t
 {

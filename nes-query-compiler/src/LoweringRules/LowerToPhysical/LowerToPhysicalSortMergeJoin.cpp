@@ -66,10 +66,25 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
     auto join = logicalOperator.getAs<JoinLogicalOperator>();
     const auto children = join->getBothChildren();
     const auto traitSet = join->getTraitSet();
-    /// This rule lowers both trigger-time kernels: SORT_MERGE_JOIN (sort) and COMPACT_HASH_JOIN (hash grouping).
+    /// This rule lowers the whole append-only trigger-kernel family: SORT_MERGE_JOIN (comparison sort),
+    /// COMPACT_HASH_JOIN (hash grouping), and RUN_MERGE_JOIN (sorted runs + merge).
     const auto implementationTrait = getTrait<JoinImplementationTypeTrait>(traitSet);
-    const bool hashGrouping
-        = implementationTrait.has_value() and implementationTrait.value()->implementationType == JoinImplementation::COMPACT_HASH_JOIN;
+    auto kernel = SMJKernel::SORT;
+    if (implementationTrait.has_value())
+    {
+        switch (implementationTrait.value()->implementationType)
+        {
+            case JoinImplementation::COMPACT_HASH_JOIN:
+                kernel = SMJKernel::HASH_GROUP;
+                break;
+            case JoinImplementation::RUN_MERGE_JOIN:
+                kernel = SMJKernel::RUN_MERGE;
+                break;
+            default:
+                break;
+        }
+    }
+    const bool oneSided = conf.joinDirectorySides.getValue() == JoinDirectorySides::ONE_SIDED;
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
     const auto memoryLayoutType = traitSet.get<MemoryLayoutTypeTrait>()->memoryLayout;
     PRECONDITION(std::ranges::size(*outputOriginIds) == 1, "Expected one output origin id");
@@ -152,7 +167,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
         std::move(sliceAndWindowStore),
         InnerJoinTriggerStrategy{},
         /// SMJ range-parallel merge: k hash-range probe tasks per window when the range probe is selected.
-        conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES ? conf.joinProbeRanges.getValue() : 1);
+        /// One-sided kernels are single-task probes: the right-side stream is not range-partitionable.
+        not oneSided and conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES ? conf.joinProbeRanges.getValue() : 1);
 
     const auto handlerId = getNextOperatorHandlerId();
     const NLJBuildPhysicalOperator leftBuildOperator{
@@ -195,7 +211,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             leftKeyFieldNames,
             rightKeyFieldNames,
             std::make_shared<MurMur3HashFunction>(),
-            hashGrouping),
+            kernel,
+            oneSided),
         physicalOutputSchema,
         physicalOutputSchema,
         memoryLayoutType,
