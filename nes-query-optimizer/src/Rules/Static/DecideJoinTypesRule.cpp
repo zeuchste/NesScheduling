@@ -134,19 +134,21 @@ LogicalOperator DecideJoinTypesRule::apply(const LogicalOperator& logicalOperato
             /// Equi-join: pick the configured key-based implementation. The sort-merge (A2) and index (A4)
             /// variants support inner joins only; outer joins fall back to the hash join with a warning.
             auto implementation = JoinImplementation::HASH_JOIN;
-            if (this->joinStrategy == StreamJoinStrategy::SORT_MERGE_JOIN or this->joinStrategy == StreamJoinStrategy::INDEX_JOIN)
+            if (this->joinStrategy == StreamJoinStrategy::SORT_MERGE_JOIN or this->joinStrategy == StreamJoinStrategy::INDEX_JOIN
+                or this->joinStrategy == StreamJoinStrategy::COMPACT_HASH_JOIN)
             {
                 if (isOuterJoin(joinOperator.value()->getJoinType()))
                 {
                     NES_WARNING(
-                        "The configured sort-merge/index join strategy supports inner joins only; falling back to the hash join "
-                        "for operator {}",
+                        "The configured sort-merge/index/compact-hash join strategy supports inner joins only; falling back to the "
+                        "hash join for operator {}",
                         logicalOperator);
                 }
                 else
                 {
                     implementation = this->joinStrategy == StreamJoinStrategy::SORT_MERGE_JOIN ? JoinImplementation::SORT_MERGE_JOIN
-                                                                                               : JoinImplementation::INDEX_JOIN;
+                        : this->joinStrategy == StreamJoinStrategy::INDEX_JOIN                 ? JoinImplementation::INDEX_JOIN
+                                                                                               : JoinImplementation::COMPACT_HASH_JOIN;
                 }
             }
             tryInsert(traitSet, JoinImplementationTypeTrait{implementation});

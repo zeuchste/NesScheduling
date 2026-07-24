@@ -44,6 +44,7 @@
 #include <SliceStore/DefaultTimeBasedSliceStore.hpp>
 #include <SliceStore/Slice.hpp>
 #include <Traits/FieldMappingTrait.hpp>
+#include <Traits/JoinImplementationTypeTrait.hpp>
 #include <Traits/MemoryLayoutTypeTrait.hpp>
 #include <Traits/OutputOriginIdsTrait.hpp>
 #include <Traits/TraitSet.hpp>
@@ -65,6 +66,10 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
     auto join = logicalOperator.getAs<JoinLogicalOperator>();
     const auto children = join->getBothChildren();
     const auto traitSet = join->getTraitSet();
+    /// This rule lowers both trigger-time kernels: SORT_MERGE_JOIN (sort) and COMPACT_HASH_JOIN (hash grouping).
+    const auto implementationTrait = getTrait<JoinImplementationTypeTrait>(traitSet);
+    const bool hashGrouping
+        = implementationTrait.has_value() and implementationTrait.value()->implementationType == JoinImplementation::COMPACT_HASH_JOIN;
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
     const auto memoryLayoutType = traitSet.get<MemoryLayoutTypeTrait>()->memoryLayout;
     PRECONDITION(std::ranges::size(*outputOriginIds) == 1, "Expected one output origin id");
@@ -189,7 +194,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             rightTupleLayout,
             leftKeyFieldNames,
             rightKeyFieldNames,
-            std::make_shared<MurMur3HashFunction>()),
+            std::make_shared<MurMur3HashFunction>(),
+            hashGrouping),
         physicalOutputSchema,
         physicalOutputSchema,
         memoryLayoutType,

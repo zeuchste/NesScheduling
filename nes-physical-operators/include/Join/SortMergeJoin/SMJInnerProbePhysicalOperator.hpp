@@ -49,7 +49,8 @@ public:
         std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
         std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
         std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
-        std::shared_ptr<HashFunction> hashFunction);
+        std::shared_ptr<HashFunction> hashFunction,
+        bool hashGrouping = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -69,6 +70,9 @@ private:
         const nautilus::val<uint64_t>& rangeCount) const;
 
     std::shared_ptr<HashFunction> hashFunction;
+    /// CompactHashJoin: replace the trigger-time sort with O(n) hash grouping (histogram + prefix sum +
+    /// scatter into bucket-contiguous runs); merge compares full hashes inside each bucket.
+    bool hashGrouping;
 };
 
 }

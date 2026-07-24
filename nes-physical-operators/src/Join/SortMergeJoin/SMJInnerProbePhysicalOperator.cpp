@@ -59,7 +59,95 @@ struct SMJSortState
     std::vector<std::pair<uint64_t, uint64_t>> candidatePairs; /// single-task mode only
     std::atomic<int> phase{0}; /// 0 = unclaimed, 1 = building, 2 = sorted & ready
     std::atomic<uint64_t> tasksRemaining{1};
+    /// CompactHashJoin (hash-grouping kernel): per-side bucket-contiguous runs + prefix offsets, shared mask.
+    std::vector<uint64_t> offsets[2];
+    uint64_t buckets{0};
 };
+
+/// CompactHashJoin trigger kernel, phase A: group both (hash, position) runs by hash bucket via
+/// histogram + prefix sum + scatter — O(n), two passes, no comparison sort. Bucket count is the next
+/// power of two >= the larger side, so buckets hold ~1 entry per side on unique keys.
+void chjGroup(SMJSortState* state)
+{
+    const uint64_t n = std::max(state->sides[0].size(), state->sides[1].size());
+    uint64_t buckets = 64;
+    while (buckets < n)
+    {
+        buckets <<= 1;
+    }
+    state->buckets = buckets;
+    const uint64_t mask = buckets - 1;
+    for (int side = 0; side < 2; ++side)
+    {
+        const auto& in = state->sides[side];
+        auto& off = state->offsets[side];
+        off.assign(buckets + 1, 0);
+        for (const auto& [hash, position] : in)
+        {
+            ++off[(hash & mask) + 1];
+        }
+        for (uint64_t b = 1; b <= buckets; ++b)
+        {
+            off[b] += off[b - 1];
+        }
+        std::vector<std::pair<uint64_t, uint64_t>> out(in.size());
+        std::vector<uint64_t> cursor(off.begin(), off.end() - 1);
+        for (const auto& entry : in)
+        {
+            out[cursor[entry.first & mask]++] = entry;
+        }
+        state->sides[side] = std::move(out); /// sides now bucket-contiguous; offsets index the regions
+    }
+}
+
+/// CompactHashJoin trigger kernel, phase B: per-bucket merge of the region [bucketLo, bucketHi).
+/// Buckets are tiny (~1 entry/side), so the in-bucket nested loop is O(1) amortized; full-hash equality
+/// filters bucket collisions, the join predicate later verifies the actual keys.
+void chjMergeBuckets(
+    const SMJSortState* state, const uint64_t bucketLo, const uint64_t bucketHi, std::vector<std::pair<uint64_t, uint64_t>>& pairs)
+{
+    const auto& left = state->sides[0];
+    const auto& right = state->sides[1];
+    const auto& leftOff = state->offsets[0];
+    const auto& rightOff = state->offsets[1];
+    for (uint64_t b = bucketLo; b < bucketHi; ++b)
+    {
+        for (uint64_t i = leftOff[b]; i < leftOff[b + 1]; ++i)
+        {
+            for (uint64_t j = rightOff[b]; j < rightOff[b + 1]; ++j)
+            {
+                if (left[i].first == right[j].first)
+                {
+                    pairs.emplace_back(left[i].second, right[j].second);
+                }
+            }
+        }
+    }
+}
+
+uint64_t chjGroupAndMerge(SMJSortState* state)
+{
+    chjGroup(state);
+    chjMergeBuckets(state, 0, state->buckets, state->candidatePairs);
+    return state->candidatePairs.size();
+}
+
+void chjMarkReady(SMJSortState* state)
+{
+    chjGroup(state);
+    state->phase.store(2, std::memory_order_release);
+}
+
+/// Range-parallel CompactHashJoin: task idx merges its disjoint bucket range.
+std::vector<std::pair<uint64_t, uint64_t>>* chjMergeBucketRange(const SMJSortState* state, const uint64_t idx, const uint64_t ranges)
+{
+    auto* pairs = new std::vector<std::pair<uint64_t, uint64_t>>();
+    const uint64_t step = state->buckets / ranges;
+    const uint64_t lo = idx * step;
+    const uint64_t hi = idx == ranges - 1 ? state->buckets : (idx + 1) * step;
+    chjMergeBuckets(state, lo, hi, *pairs);
+    return pairs;
+}
 
 /// Registry of shared states, keyed by (handler, window start): range tasks of the same window meet here.
 /// ponytail: global map + mutex; per-handler storage if this ever contends.
@@ -263,7 +351,8 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
     std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
     std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
-    std::shared_ptr<HashFunction> hashFunction)
+    std::shared_ptr<HashFunction> hashFunction,
+    const bool hashGrouping)
     : NLJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -274,6 +363,7 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
           std::move(leftKeyFieldNames),
           std::move(rightKeyFieldNames))
     , hashFunction(std::move(hashFunction))
+    , hashGrouping(hashGrouping)
 {
 }
 
@@ -350,25 +440,34 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
             };
             appendSideShared(leftPagedVector, leftKeyFieldNames, 0);
             appendSideShared(rightPagedVector, rightKeyFieldNames, 1);
-            nautilus::invoke(smjMarkReady, state);
+            if (hashGrouping)
+            {
+                nautilus::invoke(chjMarkReady, state);
+            }
+            else
+            {
+                nautilus::invoke(smjMarkReady, state);
+            }
         }
         else
         {
             nautilus::invoke(smjWaitReady, state);
         }
 
-        /// Disjoint hash range of this task: [idx * step, (idx + 1) * step - 1], last range ends at UINT64_MAX.
-        const auto pairs = nautilus::invoke(
-            +[](const SMJSortState* st, const uint64_t idx, const uint64_t ranges) -> std::vector<std::pair<uint64_t, uint64_t>>*
-            {
-                const uint64_t step = UINT64_MAX / ranges;
-                const uint64_t lo = idx * step;
-                const uint64_t hi = idx == ranges - 1 ? UINT64_MAX : ((idx + 1) * step - 1);
-                return smjMergeRange(st, lo, hi);
-            },
-            state,
-            rangeIndex,
-            rangeCount);
+        /// Disjoint range of this task: hash-domain ranges for the sort kernel, bucket ranges for hash grouping.
+        const auto pairs = hashGrouping
+            ? nautilus::invoke(chjMergeBucketRange, state, rangeIndex, rangeCount)
+            : nautilus::invoke(
+                  +[](const SMJSortState* st, const uint64_t idx, const uint64_t ranges) -> std::vector<std::pair<uint64_t, uint64_t>>*
+                  {
+                      const uint64_t step = UINT64_MAX / ranges;
+                      const uint64_t lo = idx * step;
+                      const uint64_t hi = idx == ranges - 1 ? UINT64_MAX : ((idx + 1) * step - 1);
+                      return smjMergeRange(st, lo, hi);
+                  },
+                  state,
+                  rangeIndex,
+                  rangeCount);
         const auto numberOfPairs = nautilus::invoke(smjRangePairCount, pairs);
         for (nautilus::val<uint64_t> pair = 0; pair < numberOfPairs; ++pair)
         {
@@ -415,7 +514,9 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
     appendSide(rightPagedVector, rightKeyFieldNames, 1);
 
     /// Phase 2: sort both runs by hash and merge them into candidate pairs — the trigger-time sort cost of A2.
-    const auto numberOfCandidatePairs = nautilus::invoke(smjSortAndMerge, state);
+    /// The CompactHashJoin kernel replaces the O(n log n) sort with O(n) hash grouping by bucket.
+    const auto numberOfCandidatePairs
+        = hashGrouping ? nautilus::invoke(chjGroupAndMerge, state) : nautilus::invoke(smjSortAndMerge, state);
 
     /// Phase 3: one flat loop over the candidate pairs (equal keys are adjacent in the sorted runs, so this
     /// scans matches sequentially); the join predicate is evaluated per pair, so hash collisions cannot
