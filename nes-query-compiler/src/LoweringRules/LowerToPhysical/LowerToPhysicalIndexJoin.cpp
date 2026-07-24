@@ -165,6 +165,8 @@ LoweringRuleResultSubgraph LowerToPhysicalIndexJoin::apply(LogicalOperator logic
         toKeyFunctions(leftKeyFieldNames),
         leftKeyFieldNames,
         std::make_shared<MurMur3HashFunction>()};
+    /// One-sided directories: the probe only queries the left index, so the right index is skipped.
+    const bool maintainRightIndex = conf.joinDirectorySides.getValue() == JoinDirectorySides::BOTH;
     const IXJBuildPhysicalOperator rightBuildOperator{
         handlerId,
         JoinBuildSideType::Right,
@@ -173,7 +175,8 @@ LoweringRuleResultSubgraph LowerToPhysicalIndexJoin::apply(LogicalOperator logic
         std::move(sliceStoreRefRight),
         toKeyFunctions(rightKeyFieldNames),
         rightKeyFieldNames,
-        std::make_shared<MurMur3HashFunction>()};
+        std::make_shared<MurMur3HashFunction>(),
+        maintainRightIndex};
 
     auto joinSchema = JoinSchema(newLeftInputSchema, newRightInputSchema, physicalOutputSchema);
 

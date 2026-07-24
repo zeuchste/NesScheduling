@@ -49,13 +49,14 @@ HJProbePhysicalOperatorBase::HJProbePhysicalOperatorBase(
     std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
     HashMapOptions leftHashMapOptions,
     HashMapOptions rightHashMapOptions,
-    const JoinStorageVariant storageVariant)
+    const JoinStorageVariant storageVariant, const JoinStorageVariant rightStorageVariant)
     : StreamJoinProbePhysicalOperator(operatorHandlerId, std::move(joinFunction), std::move(windowMetaData), std::move(joinSchema))
     , leftTupleLayout(std::move(leftTupleLayout))
     , rightTupleLayout(std::move(rightTupleLayout))
     , leftHashMapOptions(std::move(leftHashMapOptions))
     , rightHashMapOptions(std::move(rightHashMapOptions))
     , storageVariant(storageVariant)
+    , rightStorageVariant(rightStorageVariant)
 {
 }
 
@@ -120,6 +121,20 @@ void HJProbePhysicalOperatorBase::performMatchPairsProbe(
     if (storageVariant == JoinStorageVariant::TUPLE_CHAINED)
     {
         performSharedChainsMatchPairsProbe(
+            recordBufferRef,
+            leftNumberOfHashMaps,
+            rightNumberOfHashMaps,
+            executionCtx,
+            windowStart,
+            windowEnd,
+            rightPageStart,
+            rightPageEnd);
+        return;
+    }
+    if (rightStorageVariant == JoinStorageVariant::TUPLE_CHAINED)
+    {
+        /// One-sided: left grouped, right inline per-tuple entries.
+        performOneSidedMatchPairsProbe(
             recordBufferRef,
             leftNumberOfHashMaps,
             rightNumberOfHashMaps,
@@ -232,6 +247,58 @@ void HJProbePhysicalOperatorBase::performSharedChainsMatchPairsProbe(
                         auto joinedRecord = createJoinedRecord(leftRecord, rightRecord, windowStart, windowEnd, leftFields, rightFields);
                         executeChild(executionCtx, joinedRecord);
                     });
+            }
+        }
+    }
+}
+
+
+/// One-sided probe: the right map holds inline per-tuple entries (scanned sequentially, its directory
+/// unused); each right tuple probes the left grouped map and joins against that key's paged vector.
+void HJProbePhysicalOperatorBase::performOneSidedMatchPairsProbe(
+    const nautilus::val<TupleBuffer*>& recordBufferRef,
+    nautilus::val<uint64_t> leftNumberOfHashMaps,
+    nautilus::val<uint64_t> rightNumberOfHashMaps,
+    ExecutionContext& executionCtx,
+    const nautilus::val<Timestamp>& windowStart,
+    const nautilus::val<Timestamp>& windowEnd,
+    const nautilus::val<uint64_t>& rightPageStart,
+    const nautilus::val<uint64_t>& rightPageEnd) const
+{
+    const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
+    const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
+
+    for (nautilus::val<uint64_t> leftHashMapIndex = 0; leftHashMapIndex < leftNumberOfHashMaps; ++leftHashMapIndex)
+    {
+        auto leftHashMapBuffer = pinHashMapBuffer(recordBufferRef, leftHashMapIndex);
+        ChainedHashMapRef leftHashMap = makeChainedHashMapRef(leftHashMapBuffer.asArg(), leftHashMapOptions);
+        for (nautilus::val<uint64_t> rightHashMapIndex = 0; rightHashMapIndex < rightNumberOfHashMaps; ++rightHashMapIndex)
+        {
+            auto rightHashMapBuffer = pinHashMapBuffer(recordBufferRef, leftNumberOfHashMaps + rightHashMapIndex);
+            const ChainedHashMapRef rightHashMap = makeChainedHashMapRef(rightHashMapBuffer.asArg(), rightHashMapOptions);
+            const auto rightRangeEnd = rightHashMap.endRange(rightPageStart, rightPageEnd);
+            for (auto rightIt = rightHashMap.beginRange(rightPageStart, rightPageEnd); rightIt != rightRangeEnd; ++rightIt)
+            {
+                const auto rightEntry = *rightIt;
+                const ChainedHashMapRef::ChainedEntryRef rightEntryRef{
+                    rightEntry, rightHashMapBuffer.asArg(), rightHashMapOptions.fieldKeys, rightHashMapOptions.fieldValues};
+                const auto rightRecord = reconstructRecordFromEntry(rightEntryRef, rightHashMapOptions);
+
+                if (const auto leftEntry = leftHashMap.findEntry(rightEntryRef.entryRef); leftEntry != nullptr)
+                {
+                    const ChainedHashMapRef::ChainedEntryRef leftEntryRef{
+                        static_cast<nautilus::val<ChainedHashMapEntry*>>(leftEntry),
+                        leftHashMapBuffer.asArg(),
+                        leftHashMapOptions.fieldKeys,
+                        leftHashMapOptions.fieldValues};
+                    const PagedVectorRef leftPagedVector = loadEntryPagedVector(leftEntryRef, leftTupleLayout);
+                    for (auto leftIt = leftPagedVector.begin(); leftIt != leftPagedVector.end(); ++leftIt)
+                    {
+                        const auto leftRecord = *leftIt;
+                        auto joinedRecord = createJoinedRecord(leftRecord, rightRecord, windowStart, windowEnd, leftFields, rightFields);
+                        executeChild(executionCtx, joinedRecord);
+                    }
+                }
             }
         }
     }

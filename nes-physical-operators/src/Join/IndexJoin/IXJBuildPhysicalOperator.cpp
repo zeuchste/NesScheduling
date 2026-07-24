@@ -47,11 +47,12 @@ IXJBuildPhysicalOperator::IXJBuildPhysicalOperator(
     std::unique_ptr<SliceStoreRef> sliceStoreRef,
     std::vector<PhysicalFunction> keyFunctions,
     std::vector<Record::RecordFieldIdentifier> keyFieldNames,
-    std::shared_ptr<HashFunction> hashFunction)
+    std::shared_ptr<HashFunction> hashFunction, const bool maintainIndex)
     : StreamJoinBuildPhysicalOperator{operatorHandlerId, joinBuildSide, std::move(timeFunction), std::move(tupleLayout), std::move(sliceStoreRef)}
     , keyFunctions(std::move(keyFunctions))
     , keyFieldNames(std::move(keyFieldNames))
     , hashFunction(std::move(hashFunction))
+    , maintainIndex(maintainIndex)
 {
 }
 
@@ -84,6 +85,8 @@ void IXJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) co
 
         /// 1) Incremental index maintenance: register the upcoming tuple position in the shared, synchronized index.
         /// The owning slice is resolved through the handler's per-worker cache (lock-free on the hot path).
+        /// Skipped entirely under one-sided directories (the probe never queries the right index).
+        if (maintainIndex)
         nautilus::invoke(
             +[](OperatorHandler* handler,
                 const Timestamp ts,

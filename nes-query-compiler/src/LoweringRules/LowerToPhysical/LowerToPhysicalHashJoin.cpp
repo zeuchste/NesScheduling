@@ -221,8 +221,17 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
     auto [newRightInputSchema, rightMapOperators] = addMapOperators(rightOperator, rightJoinFields, memoryLayoutType);
     auto leftTupleLayout = std::make_shared<DefaultPagedVectorTupleLayout>(newLeftInputSchema);
     auto rightTupleLayout = std::make_shared<DefaultPagedVectorTupleLayout>(newRightInputSchema);
+    /// One-sided directories (inner joins only): the probe scans the right side's entries and probes
+    /// the left map, so the right side stores inline per-tuple entries -- no per-key allocations on
+    /// the right. SMALLER degrades to the static left choice: per-tuple directories are built during
+    /// ingestion, before the side sizes are known.
+    auto rightStorageVariant = storageVariant;
+    if (conf.joinDirectorySides.getValue() != JoinDirectorySides::BOTH and not isOuterJoin(join->getJoinType()))
+    {
+        rightStorageVariant = JoinStorageVariant::TUPLE_CHAINED;
+    }
     auto leftHashMapOptions = createHashMapOptions(leftJoinFields, newLeftInputSchema, conf, storageVariant);
-    auto rightHashMapOptions = createHashMapOptions(rightJoinFields, newRightInputSchema, conf, storageVariant);
+    auto rightHashMapOptions = createHashMapOptions(rightJoinFields, newRightInputSchema, conf, rightStorageVariant);
 
     /// Creating the hash join operator handler and slice store
     auto handlerId = getNextOperatorHandlerId();
@@ -320,7 +329,7 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
         rightTupleLayout,
         rightHashMapOptions,
         std::move(sliceStoreRefRight),
-        storageVariant,
+        rightStorageVariant,
         sharedHashMap};
 
     /// Creating the hash join probe — select inner or outer probe based on join type
@@ -393,7 +402,8 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
             rightTupleLayout,
             leftHashMapOptions,
             rightHashMapOptions,
-            storageVariant));
+            storageVariant,
+            rightStorageVariant));
     }
 
     std::shared_ptr<PhysicalOperatorWrapper> leftLeaf = leftBuildWrapper;

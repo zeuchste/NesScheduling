@@ -46,7 +46,8 @@ HJInnerProbePhysicalOperator::HJInnerProbePhysicalOperator(
     std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
     HashMapOptions leftHashMapBasedOptions,
     HashMapOptions rightHashMapBasedOptions,
-    const JoinStorageVariant storageVariant)
+    const JoinStorageVariant storageVariant,
+    const JoinStorageVariant rightStorageVariant)
     : HJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -56,7 +57,8 @@ HJInnerProbePhysicalOperator::HJInnerProbePhysicalOperator(
           std::move(rightTupleLayout),
           std::move(leftHashMapBasedOptions),
           std::move(rightHashMapBasedOptions),
-          storageVariant)
+          storageVariant,
+          rightStorageVariant)
 {
 }
 

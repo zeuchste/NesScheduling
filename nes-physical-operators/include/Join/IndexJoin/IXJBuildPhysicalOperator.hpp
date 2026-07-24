@@ -42,13 +42,17 @@ public:
         std::unique_ptr<SliceStoreRef> sliceStoreRef,
         std::vector<PhysicalFunction> keyFunctions,
         std::vector<Record::RecordFieldIdentifier> keyFieldNames,
-        std::shared_ptr<HashFunction> hashFunction);
+        std::shared_ptr<HashFunction> hashFunction,
+        bool maintainIndex = true);
     void execute(ExecutionContext& ctx, Record& record) const override;
 
 private:
     std::vector<PhysicalFunction> keyFunctions;
     std::vector<Record::RecordFieldIdentifier> keyFieldNames;
     std::shared_ptr<HashFunction> hashFunction;
+    /// One-sided directory: the probe only queries the LEFT index, so the right side's index
+    /// maintenance can be skipped entirely (tuples are still appended).
+    bool maintainIndex;
 };
 
 }
