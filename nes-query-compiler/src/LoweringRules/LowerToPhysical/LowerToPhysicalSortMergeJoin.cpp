@@ -88,7 +88,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
         }
     }
     /// RUN_HASH is one-sided by construction and runs single-task, per-window only.
-    const bool oneSided = conf.joinDirectorySides.getValue() == JoinDirectorySides::ONE_SIDED or kernel == SMJKernel::RUN_HASH;
+    const bool oneSided = conf.joinDirectorySides.getValue() != JoinDirectorySides::BOTH or kernel == SMJKernel::RUN_HASH;
+    const bool pickSmaller = conf.joinDirectorySides.getValue() == JoinDirectorySides::SMALLER;
     const bool perSliceRuns = conf.joinStateScope.getValue() == JoinStateScope::PER_SLICE and kernel != SMJKernel::RUN_HASH;
     const bool bloomFilter = conf.joinPrefilter.getValue() == JoinPrefilter::BLOOM;
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
@@ -222,7 +223,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             kernel,
             oneSided,
             perSliceRuns,
-            bloomFilter),
+            bloomFilter,
+            pickSmaller),
         physicalOutputSchema,
         physicalOutputSchema,
         memoryLayoutType,

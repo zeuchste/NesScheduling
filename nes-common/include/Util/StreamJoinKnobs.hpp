@@ -66,7 +66,10 @@ enum class JoinDirectorySides : uint8_t
     BOTH,
     /// Asymmetric: directory over the left side only; the right side is scanned once, each entry
     /// probing the left directory. Halves the directory-build cost of the trigger.
-    ONE_SIDED
+    ONE_SIDED,
+    /// Asymmetric with side selection: at trigger time the directory is built over whichever side
+    /// holds fewer tuples, the larger side streams. Directory cost scales with the smaller input.
+    SMALLER
 };
 
 /// The directory-scope knob: whether the trigger-time join kernels build their directory per window

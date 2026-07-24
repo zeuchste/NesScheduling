@@ -67,7 +67,8 @@ public:
         SMJKernel kernel = SMJKernel::SORT,
         bool oneSided = false,
         bool perSliceRuns = false,
-        bool bloomFilter = false);
+        bool bloomFilter = false,
+        bool pickSmaller = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -96,6 +97,8 @@ private:
     bool perSliceRuns;
     /// join_prefilter=BLOOM: negative directory over the left side; one-sided kernels only.
     bool bloomFilter;
+    /// join_directory_sides=SMALLER: swap sides at trigger time so the directory covers the smaller input.
+    bool pickSmaller;
 
     void performPerSliceJoin(
         const PagedVectorRef& leftPagedVector,

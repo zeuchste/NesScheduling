@@ -218,9 +218,23 @@ void rmjMarkReady(SMJSortState* state)
     state->phase.store(2, std::memory_order_release);
 }
 
+/// SMALLER side selection: swap the two extracted sides so the directory (always sides[0] in the
+/// one-sided kernels) covers the smaller input; returns 1 when swapped so pair emission can restore
+/// (left, right) order. Decided per trigger — both counts are known here, which is why side selection
+/// is only possible for trigger-time directories.
+uint64_t sidesMaybeSwap(SMJSortState* state, const uint64_t pickSmaller)
+{
+    if (pickSmaller != 0 and state->sides[1].size() < state->sides[0].size())
+    {
+        std::swap(state->sides[0], state->sides[1]);
+        return 1;
+    }
+    return 0;
+}
+
 /// ONE_SIDED kernels: directory over the left side only, right side streamed against it.
 /// Sorted-directory variant (SORT and RUN_MERGE kernels): binary search per right entry.
-uint64_t oneSidedSortedMerge(SMJSortState* state, const uint64_t useBloom)
+uint64_t oneSidedSortedMerge(SMJSortState* state, const uint64_t useBloom, const uint64_t swapped)
 {
     if (useBloom != 0)
     {
@@ -228,7 +242,7 @@ uint64_t oneSidedSortedMerge(SMJSortState* state, const uint64_t useBloom)
     }
     const auto& left = state->sides[0];
     const auto cmp = [](const std::pair<uint64_t, uint64_t>& a, const uint64_t v) { return a.first < v; };
-    for (const auto& [hash, rightPosition] : state->sides[1])
+    for (const auto& [hash, streamPosition] : state->sides[1])
     {
         if (useBloom != 0 and not bloomMayContain(state, hash))
         {
@@ -236,28 +250,35 @@ uint64_t oneSidedSortedMerge(SMJSortState* state, const uint64_t useBloom)
         }
         for (auto it = std::lower_bound(left.begin(), left.end(), hash, cmp); it != left.end() and it->first == hash; ++it)
         {
-            state->candidatePairs.emplace_back(it->second, rightPosition);
+            if (swapped != 0)
+            {
+                state->candidatePairs.emplace_back(streamPosition, it->second);
+            }
+            else
+            {
+                state->candidatePairs.emplace_back(it->second, streamPosition);
+            }
         }
     }
     return state->candidatePairs.size();
 }
 
-uint64_t smjOneSidedSortAndMerge(SMJSortState* state, const uint64_t useBloom)
+uint64_t smjOneSidedSortAndMerge(SMJSortState* state, const uint64_t useBloom, const uint64_t swapped)
 {
     std::ranges::sort(state->sides[0]);
-    return oneSidedSortedMerge(state, useBloom);
+    return oneSidedSortedMerge(state, useBloom, swapped);
 }
 
-uint64_t rmjOneSidedSortAndMerge(SMJSortState* state, const uint64_t useBloom)
+uint64_t rmjOneSidedSortAndMerge(SMJSortState* state, const uint64_t useBloom, const uint64_t swapped)
 {
     rmjSortRuns(state->sides[0]);
-    return oneSidedSortedMerge(state, useBloom);
+    return oneSidedSortedMerge(state, useBloom, swapped);
 }
 
 /// RunHashJoin kernel: group the left side per run (stage A: at trigger, chunk-local and independent —
 /// the amortizable structure of the per-run column), then stream the right side against the union of
 /// the sealed runs: one bucket lookup per run per probe entry.
-uint64_t rhjGroupAndProbe(SMJSortState* state)
+uint64_t rhjGroupAndProbe(SMJSortState* state, const uint64_t swapped)
 {
     auto& left = state->sides[0];
     const uint64_t n = left.size();
@@ -289,7 +310,7 @@ uint64_t rhjGroupAndProbe(SMJSortState* state)
         std::copy(grouped.begin(), grouped.end(), left.begin() + lo);
         state->rhjRuns.push_back(std::move(run));
     }
-    for (const auto& [hash, rightPosition] : state->sides[1])
+    for (const auto& [hash, streamPosition] : state->sides[1])
     {
         for (const auto& run : state->rhjRuns)
         {
@@ -298,7 +319,14 @@ uint64_t rhjGroupAndProbe(SMJSortState* state)
             {
                 if (left[i].first == hash)
                 {
-                    state->candidatePairs.emplace_back(left[i].second, rightPosition);
+                    if (swapped != 0)
+                    {
+                        state->candidatePairs.emplace_back(streamPosition, left[i].second);
+                    }
+                    else
+                    {
+                        state->candidatePairs.emplace_back(left[i].second, streamPosition);
+                    }
                 }
             }
         }
@@ -307,7 +335,7 @@ uint64_t rhjGroupAndProbe(SMJSortState* state)
 }
 
 /// Hash-grouping one-sided variant: bucket the left side only; each right entry scans its left bucket region.
-uint64_t chjOneSidedGroupAndMerge(SMJSortState* state, const uint64_t useBloom)
+uint64_t chjOneSidedGroupAndMerge(SMJSortState* state, const uint64_t useBloom, const uint64_t swapped)
 {
     chjSizeBuckets(state);
     chjGroupSide(state, 0);
@@ -318,7 +346,7 @@ uint64_t chjOneSidedGroupAndMerge(SMJSortState* state, const uint64_t useBloom)
     const uint64_t mask = state->buckets - 1;
     const auto& left = state->sides[0];
     const auto& leftOff = state->offsets[0];
-    for (const auto& [hash, rightPosition] : state->sides[1])
+    for (const auto& [hash, streamPosition] : state->sides[1])
     {
         if (useBloom != 0 and not bloomMayContain(state, hash))
         {
@@ -329,7 +357,14 @@ uint64_t chjOneSidedGroupAndMerge(SMJSortState* state, const uint64_t useBloom)
         {
             if (left[i].first == hash)
             {
-                state->candidatePairs.emplace_back(left[i].second, rightPosition);
+                if (swapped != 0)
+                {
+                    state->candidatePairs.emplace_back(streamPosition, left[i].second);
+                }
+                else
+                {
+                    state->candidatePairs.emplace_back(left[i].second, streamPosition);
+                }
             }
         }
     }
@@ -602,7 +637,8 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     const SMJKernel kernel,
     const bool oneSided,
     const bool perSliceRuns,
-    const bool bloomFilter)
+    const bool bloomFilter,
+    const bool pickSmaller)
     : NLJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -617,6 +653,7 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     , oneSided(oneSided)
     , perSliceRuns(perSliceRuns)
     , bloomFilter(bloomFilter)
+    , pickSmaller(pickSmaller)
 {
 }
 
@@ -847,19 +884,23 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
     /// k-way merge; oneSided variants build the directory over the left side only and stream the right side.
     const auto numberOfCandidatePairs = [&]
     {
+        const nautilus::val<uint64_t> useBloom{static_cast<uint64_t>(bloomFilter ? 1 : 0)};
+        const auto swapped = oneSided
+            ? nautilus::invoke(sidesMaybeSwap, state, nautilus::val<uint64_t>(pickSmaller ? 1 : 0))
+            : nautilus::val<uint64_t>(0);
         switch (kernel)
         {
             case SMJKernel::RUN_HASH:
-                return nautilus::invoke(rhjGroupAndProbe, state);
+                return nautilus::invoke(rhjGroupAndProbe, state, swapped);
             case SMJKernel::HASH_GROUP:
-                return oneSided ? nautilus::invoke(chjOneSidedGroupAndMerge, state, nautilus::val<uint64_t>(bloomFilter ? 1 : 0))
+                return oneSided ? nautilus::invoke(chjOneSidedGroupAndMerge, state, useBloom, swapped)
                                 : nautilus::invoke(chjGroupAndMerge, state);
             case SMJKernel::RUN_MERGE:
-                return oneSided ? nautilus::invoke(rmjOneSidedSortAndMerge, state, nautilus::val<uint64_t>(bloomFilter ? 1 : 0))
+                return oneSided ? nautilus::invoke(rmjOneSidedSortAndMerge, state, useBloom, swapped)
                                 : nautilus::invoke(rmjSortAndMerge, state);
             case SMJKernel::SORT:
             default:
-                return oneSided ? nautilus::invoke(smjOneSidedSortAndMerge, state, nautilus::val<uint64_t>(bloomFilter ? 1 : 0))
+                return oneSided ? nautilus::invoke(smjOneSidedSortAndMerge, state, useBloom, swapped)
                                 : nautilus::invoke(smjSortAndMerge, state);
         }
     }();

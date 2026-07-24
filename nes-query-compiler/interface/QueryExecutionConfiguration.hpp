@@ -99,8 +99,8 @@ public:
     EnumOption<JoinDirectorySides> joinDirectorySides
         = {"join_directory_sides",
            JoinDirectorySides::BOTH,
-           "Sides the trigger-time join kernels build their directory over [BOTH|ONE_SIDED]. ONE_SIDED "
-           "builds the directory over the left side only and streams the right side against it."};
+           "Sides the trigger-time join kernels build their directory over [BOTH|ONE_SIDED|SMALLER]. ONE_SIDED "
+           "builds the directory over the left side only; SMALLER picks the smaller side per trigger."};
     EnumOption<JoinStateScope> joinStateScope
         = {"join_state_scope",
            JoinStateScope::PER_WINDOW,
