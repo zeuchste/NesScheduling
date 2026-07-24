@@ -30,6 +30,8 @@ namespace NES
 /// Operator handler of the index join (A4). Reuses the NLJ trigger-buffer format (EmittedNLJWindowTrigger:
 /// window info + slice ends), but creates IXJSlices and does NOT combine the per-worker paged vectors at
 /// trigger time — the shared index references (worker, position) pairs that must stay valid.
+class IXJSlice;
+
 class IXJOperatorHandler final : public StreamJoinOperatorHandler
 {
 public:
