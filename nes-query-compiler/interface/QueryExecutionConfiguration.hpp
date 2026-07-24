@@ -106,6 +106,11 @@ public:
            JoinStateScope::PER_WINDOW,
            "Scope of the trigger-time join directory [PER_WINDOW|PER_SLICE]. PER_SLICE caches sorted runs "
            "on the slice, shared across all overlapping windows (sliding-window amortization)."};
+    EnumOption<JoinPrefilter> joinPrefilter
+        = {"join_prefilter",
+           JoinPrefilter::NONE,
+           "Auxiliary negative directory checked before the directory probe [NONE|BLOOM]. BLOOM applies to "
+           "the one-sided trigger-time kernels."};
     EnumOption<JoinTriggerVariant> joinTrigger
         = {"join_trigger",
            JoinTriggerVariant::LAZY,
@@ -134,6 +139,7 @@ private:
             &joinProbeRanges,
             &joinDirectorySides,
             &joinStateScope,
+            &joinPrefilter,
             &joinTrigger,
             &joinFixedBuckets,
             &sliceCacheConfiguration};

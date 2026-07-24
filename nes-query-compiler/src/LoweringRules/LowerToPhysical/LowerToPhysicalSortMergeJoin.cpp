@@ -86,6 +86,7 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
     }
     const bool oneSided = conf.joinDirectorySides.getValue() == JoinDirectorySides::ONE_SIDED;
     const bool perSliceRuns = conf.joinStateScope.getValue() == JoinStateScope::PER_SLICE;
+    const bool bloomFilter = conf.joinPrefilter.getValue() == JoinPrefilter::BLOOM;
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
     const auto memoryLayoutType = traitSet.get<MemoryLayoutTypeTrait>()->memoryLayout;
     PRECONDITION(std::ranges::size(*outputOriginIds) == 1, "Expected one output origin id");
@@ -216,7 +217,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             std::make_shared<MurMur3HashFunction>(),
             kernel,
             oneSided,
-            perSliceRuns),
+            perSliceRuns,
+            bloomFilter),
         physicalOutputSchema,
         physicalOutputSchema,
         memoryLayoutType,

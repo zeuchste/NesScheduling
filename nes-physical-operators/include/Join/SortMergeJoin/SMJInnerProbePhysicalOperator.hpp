@@ -63,7 +63,8 @@ public:
         std::shared_ptr<HashFunction> hashFunction,
         SMJKernel kernel = SMJKernel::SORT,
         bool oneSided = false,
-        bool perSliceRuns = false);
+        bool perSliceRuns = false,
+        bool bloomFilter = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -90,6 +91,8 @@ private:
     /// join_state_scope=PER_SLICE: sorted runs cached on the NLJSlice, shared across overlapping windows.
     /// All three kernels use the sorted-run mechanism under this scope; single-task probe only.
     bool perSliceRuns;
+    /// join_prefilter=BLOOM: negative directory over the left side; one-sided kernels only.
+    bool bloomFilter;
 
     void performPerSliceJoin(
         const PagedVectorRef& leftPagedVector,

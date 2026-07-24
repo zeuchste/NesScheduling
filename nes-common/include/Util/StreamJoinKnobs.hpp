@@ -81,6 +81,15 @@ enum class JoinStateScope : uint8_t
     PER_SLICE
 };
 
+/// The pre-filter knob: an auxiliary negative directory checked before the real directory probe.
+enum class JoinPrefilter : uint8_t
+{
+    NONE,
+    /// Blocked Bloom filter over the left side (~8 bits/key, 2 probes); right entries whose bits miss
+    /// skip the directory probe. One-sided trigger-time kernels only; pays off at low match rates.
+    BLOOM
+};
+
 /// The two trigger variants (T1/T2): when join work happens.
 enum class JoinTriggerVariant : uint8_t
 {

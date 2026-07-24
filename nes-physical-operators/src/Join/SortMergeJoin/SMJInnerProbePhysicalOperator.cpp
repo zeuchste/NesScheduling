@@ -73,7 +73,37 @@ struct SMJSortState
     /// CompactHashJoin (hash-grouping kernel): per-side bucket-contiguous runs + prefix offsets, shared mask.
     std::vector<uint64_t> offsets[2];
     uint64_t buckets{0};
+    /// join_prefilter=BLOOM (one-sided kernels only): negative directory over the left side. Two probes
+    /// derived from the stored 64-bit hash, ~8 bits per key; a right entry whose bits miss skips the
+    /// directory probe entirely — the win scales with the miss rate.
+    std::vector<uint64_t> bloom;
+    uint64_t bloomMask{0};
 };
+
+void bloomBuild(SMJSortState* state)
+{
+    uint64_t words = 64; /// 8 bits/key target, pow2 words of 64 bits
+    while (words * 64 < state->sides[0].size() * 8)
+    {
+        words <<= 1;
+    }
+    state->bloom.assign(words, 0);
+    state->bloomMask = words * 64 - 1;
+    for (const auto& [hash, position] : state->sides[0])
+    {
+        const uint64_t b1 = hash & state->bloomMask;
+        const uint64_t b2 = (hash >> 32 ^ hash * 0x9e3779b97f4a7c15ULL) & state->bloomMask;
+        state->bloom[b1 >> 6] |= 1ULL << (b1 & 63);
+        state->bloom[b2 >> 6] |= 1ULL << (b2 & 63);
+    }
+}
+
+bool bloomMayContain(const SMJSortState* state, const uint64_t hash)
+{
+    const uint64_t b1 = hash & state->bloomMask;
+    const uint64_t b2 = (hash >> 32 ^ hash * 0x9e3779b97f4a7c15ULL) & state->bloomMask;
+    return (state->bloom[b1 >> 6] >> (b1 & 63) & 1) and (state->bloom[b2 >> 6] >> (b2 & 63) & 1);
+}
 
 /// CompactHashJoin trigger kernel, phase A: group both (hash, position) runs by hash bucket via
 /// histogram + prefix sum + scatter — O(n), two passes, no comparison sort. Bucket count is the next
@@ -180,12 +210,20 @@ void rmjMarkReady(SMJSortState* state)
 
 /// ONE_SIDED kernels: directory over the left side only, right side streamed against it.
 /// Sorted-directory variant (SORT and RUN_MERGE kernels): binary search per right entry.
-uint64_t oneSidedSortedMerge(SMJSortState* state)
+uint64_t oneSidedSortedMerge(SMJSortState* state, const uint64_t useBloom)
 {
+    if (useBloom != 0)
+    {
+        bloomBuild(state);
+    }
     const auto& left = state->sides[0];
     const auto cmp = [](const std::pair<uint64_t, uint64_t>& a, const uint64_t v) { return a.first < v; };
     for (const auto& [hash, rightPosition] : state->sides[1])
     {
+        if (useBloom != 0 and not bloomMayContain(state, hash))
+        {
+            continue;
+        }
         for (auto it = std::lower_bound(left.begin(), left.end(), hash, cmp); it != left.end() and it->first == hash; ++it)
         {
             state->candidatePairs.emplace_back(it->second, rightPosition);
@@ -194,28 +232,36 @@ uint64_t oneSidedSortedMerge(SMJSortState* state)
     return state->candidatePairs.size();
 }
 
-uint64_t smjOneSidedSortAndMerge(SMJSortState* state)
+uint64_t smjOneSidedSortAndMerge(SMJSortState* state, const uint64_t useBloom)
 {
     std::ranges::sort(state->sides[0]);
-    return oneSidedSortedMerge(state);
+    return oneSidedSortedMerge(state, useBloom);
 }
 
-uint64_t rmjOneSidedSortAndMerge(SMJSortState* state)
+uint64_t rmjOneSidedSortAndMerge(SMJSortState* state, const uint64_t useBloom)
 {
     rmjSortRuns(state->sides[0]);
-    return oneSidedSortedMerge(state);
+    return oneSidedSortedMerge(state, useBloom);
 }
 
 /// Hash-grouping one-sided variant: bucket the left side only; each right entry scans its left bucket region.
-uint64_t chjOneSidedGroupAndMerge(SMJSortState* state)
+uint64_t chjOneSidedGroupAndMerge(SMJSortState* state, const uint64_t useBloom)
 {
     chjSizeBuckets(state);
     chjGroupSide(state, 0);
+    if (useBloom != 0)
+    {
+        bloomBuild(state);
+    }
     const uint64_t mask = state->buckets - 1;
     const auto& left = state->sides[0];
     const auto& leftOff = state->offsets[0];
     for (const auto& [hash, rightPosition] : state->sides[1])
     {
+        if (useBloom != 0 and not bloomMayContain(state, hash))
+        {
+            continue;
+        }
         const uint64_t b = hash & mask;
         for (uint64_t i = leftOff[b]; i < leftOff[b + 1]; ++i)
         {
@@ -493,7 +539,8 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     std::shared_ptr<HashFunction> hashFunction,
     const SMJKernel kernel,
     const bool oneSided,
-    const bool perSliceRuns)
+    const bool perSliceRuns,
+    const bool bloomFilter)
     : NLJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -507,6 +554,7 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     , kernel(kernel)
     , oneSided(oneSided)
     , perSliceRuns(perSliceRuns)
+    , bloomFilter(bloomFilter)
 {
 }
 
@@ -739,12 +787,15 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
         switch (kernel)
         {
             case SMJKernel::HASH_GROUP:
-                return oneSided ? nautilus::invoke(chjOneSidedGroupAndMerge, state) : nautilus::invoke(chjGroupAndMerge, state);
+                return oneSided ? nautilus::invoke(chjOneSidedGroupAndMerge, state, nautilus::val<uint64_t>(bloomFilter ? 1 : 0))
+                                : nautilus::invoke(chjGroupAndMerge, state);
             case SMJKernel::RUN_MERGE:
-                return oneSided ? nautilus::invoke(rmjOneSidedSortAndMerge, state) : nautilus::invoke(rmjSortAndMerge, state);
+                return oneSided ? nautilus::invoke(rmjOneSidedSortAndMerge, state, nautilus::val<uint64_t>(bloomFilter ? 1 : 0))
+                                : nautilus::invoke(rmjSortAndMerge, state);
             case SMJKernel::SORT:
             default:
-                return oneSided ? nautilus::invoke(smjOneSidedSortAndMerge, state) : nautilus::invoke(smjSortAndMerge, state);
+                return oneSided ? nautilus::invoke(smjOneSidedSortAndMerge, state, nautilus::val<uint64_t>(bloomFilter ? 1 : 0))
+                                : nautilus::invoke(smjSortAndMerge, state);
         }
     }();
 
