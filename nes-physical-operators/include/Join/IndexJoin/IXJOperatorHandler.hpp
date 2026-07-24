@@ -13,6 +13,7 @@
 */
 
 #pragma once
+#include <array>
 
 #include <functional>
 #include <memory>
@@ -41,7 +42,22 @@ public:
     [[nodiscard]] std::function<std::vector<std::shared_ptr<Slice>>(SliceStart, SliceEnd)>
     getCreateNewSlicesFunction(const CreateNewSlicesArguments& args) const override;
 
+    /// Resolves the IXJSlice covering `ts` for the index insert of `workerThreadId`, via a per-worker one-entry
+    /// cache (single-writer per entry, so lock-free on the hot path; the store lookup only runs on slice change).
+    /// The slice is guaranteed to exist: the vector extractor for the same tuple ran first and created it.
+    /// ponytail: fixed 256-worker cache array; sized dynamically if we ever run more workers.
+    [[nodiscard]] IXJSlice* sliceForIndexInsert(Timestamp ts, WorkerThreadId workerThreadId);
+
 private:
+    struct WorkerSliceCache
+    {
+        uint64_t start = 1; /// empty interval [1, 0) == always miss initially
+        uint64_t end = 0;
+        IXJSlice* slice = nullptr;
+    };
+    static constexpr uint64_t MAX_CACHED_WORKERS = 256;
+    std::array<WorkerSliceCache, MAX_CACHED_WORKERS> indexInsertCaches{};
+
     void createProbeTasks(
         const ProbeWorkItem& workItem,
         const WindowInfo& windowInfo,

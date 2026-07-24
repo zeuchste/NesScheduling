@@ -23,6 +23,7 @@
 #include <Interface/NautilusBuffer.hpp>
 #include <Interface/PagedVector/PagedVectorRef.hpp>
 #include <Interface/Record.hpp>
+#include <Join/IndexJoin/IXJOperatorHandler.hpp>
 #include <Join/IndexJoin/IXJSlice.hpp>
 #include <Join/StreamJoinBuildPhysicalOperator.hpp>
 #include <Join/StreamJoinUtil.hpp>
@@ -82,10 +83,19 @@ void IXJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) co
         const auto hash = hashFunction->calculate(keyValues);
 
         /// 1) Incremental index maintenance: register the upcoming tuple position in the shared, synchronized index.
+        /// The owning slice is resolved through the handler's per-worker cache (lock-free on the hot path).
         nautilus::invoke(
-            +[](TupleBuffer* vectorBuf, const WorkerThreadId workerThreadId, const JoinBuildSideType side, const uint64_t keyHash) -> void
-            { IXJSlice::fromVectorBuffer(vectorBuf->getAvailableMemoryArea().data())->insertIndexEntry(side, workerThreadId, keyHash); },
-            vectorBuffer.asArg(),
+            +[](OperatorHandler* handler,
+                const Timestamp ts,
+                const WorkerThreadId workerThreadId,
+                const JoinBuildSideType side,
+                const uint64_t keyHash) -> void
+            {
+                dynamic_cast<IXJOperatorHandler*>(handler)->sliceForIndexInsert(ts, workerThreadId)
+                    ->insertIndexEntry(side, workerThreadId, keyHash);
+            },
+            ctx.getGlobalOperatorHandler(operatorHandlerId),
+            timestamp,
             ctx.workerThreadId,
             nautilus::val<JoinBuildSideType>(joinBuildSide),
             hash);

@@ -100,4 +100,27 @@ void IXJOperatorHandler::createProbeTasks(
     probeTasks.emplace_back(std::move(tupleBuffer));
 }
 
+
+IXJSlice* IXJOperatorHandler::sliceForIndexInsert(const Timestamp ts, const WorkerThreadId workerThreadId)
+{
+    auto& cache = indexInsertCaches[workerThreadId % MAX_CACHED_WORKERS];
+    const auto raw = ts.getRawValue();
+    if (cache.slice != nullptr and cache.start <= raw and raw < cache.end)
+    {
+        return cache.slice;
+    }
+    const auto slices = getSliceAndWindowStore().getSlicesOrCreate(
+        ts,
+        [](SliceStart, SliceEnd) -> std::vector<std::shared_ptr<Slice>>
+        {
+            INVARIANT(false, "IXJ index insert requires the slice to exist (the vector extractor creates it first)");
+            return {};
+        });
+    INVARIANT(not slices.empty(), "No slice found for timestamp {}", ts);
+    auto* ixjSlice = dynamic_cast<IXJSlice*>(slices.front().get());
+    INVARIANT(ixjSlice != nullptr, "Slice for timestamp {} is not an IXJSlice", ts);
+    cache = {ixjSlice->getSliceStart().getRawValue(), ixjSlice->getSliceEnd().getRawValue(), ixjSlice};
+    return ixjSlice;
+}
+
 }

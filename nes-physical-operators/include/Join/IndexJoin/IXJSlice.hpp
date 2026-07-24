@@ -47,14 +47,7 @@ public:
         uint64_t tupleSizeLeft,
         uint64_t tupleSizeRight);
 
-    ~IXJSlice() override;
-
     [[nodiscard]] uint64_t getNumberOfVectorsPerSide() const { return numberOfWorkerThreads; }
-
-    /// The redesigned slice store hands out pinned vector TupleBuffers, not slice pointers; the build resolves
-    /// the owning slice from the vector buffer's memory area via this registry.
-    /// ponytail: global registry map; a back-pointer in the buffer header if this ever shows in profiles.
-    [[nodiscard]] static IXJSlice* fromVectorBuffer(const void* vectorMemArea);
 
     /// Registers the NEXT tuple that workerThreadId will append to its paged vector of the given side under
     /// the given key hash. Must be called immediately before the corresponding pushBack, from the owning
@@ -74,8 +67,6 @@ public:
     static constexpr uint64_t POSITION_MASK = (uint64_t{1} << WORKER_SHIFT) - 1;
 
 private:
-    static folly::Synchronized<std::unordered_map<const void*, IXJSlice*>>& vectorBufferRegistry();
-
     using SideIndex = folly::Synchronized<std::multimap<uint64_t, uint64_t>>;
     [[nodiscard]] const SideIndex& indexFor(JoinBuildSideType side) const
     {
