@@ -58,7 +58,8 @@ IXJOperatorHandler::getCreateNewSlicesFunction(const CreateNewSlicesArguments& a
         [numberOfWorkerThreads = numberOfWorkerThreads,
          bufferProvider = nljArgs.bufferProvider,
          tupleSizeLeft = nljArgs.tupleSizeLeft,
-         tupleSizeRight = nljArgs.tupleSizeRight](SliceStart start, SliceEnd end) -> std::vector<std::shared_ptr<Slice>>
+         tupleSizeRight = nljArgs.tupleSizeRight,
+         sharedIndex = sharedIndex](SliceStart start, SliceEnd end) -> std::vector<std::shared_ptr<Slice>>
         { return {std::make_shared<IXJSlice>(*bufferProvider, start, end, numberOfWorkerThreads, tupleSizeLeft, tupleSizeRight, sharedIndex)}; });
 }
 

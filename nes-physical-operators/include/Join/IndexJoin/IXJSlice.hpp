@@ -72,9 +72,6 @@ public:
 
 private:
     using SideIndex = folly::Synchronized<std::multimap<uint64_t, uint64_t>>;
-    bool sharedIndex;
-    /// Local mode: [side][worker] unsynchronized indexes.
-    std::vector<std::multimap<uint64_t, uint64_t>> localIndexes[2];
     [[nodiscard]] const SideIndex& indexFor(JoinBuildSideType side) const
     {
         return side == JoinBuildSideType::Left ? leftIndex : rightIndex;
@@ -82,6 +79,10 @@ private:
     SideIndex& indexFor(JoinBuildSideType side) { return side == JoinBuildSideType::Left ? leftIndex : rightIndex; }
 
     uint64_t numberOfWorkerThreads;
+    bool sharedIndex;
+    /// Local mode: [side][worker] unsynchronized indexes.
+    std::vector<std::multimap<uint64_t, uint64_t>> localIndexes[2];
+
     SideIndex leftIndex;
     SideIndex rightIndex;
 };
