@@ -39,13 +39,17 @@ public:
     /// Sentinel returned by LookupState::next() once all matches are consumed.
     static constexpr uint64_t LOOKUP_END = UINT64_MAX;
 
+    /// sharedIndex = true: one synchronized index per side (the original prototype, kept as reference).
+    /// sharedIndex = false: one unsynchronized index per worker and side — the build knob applied to the
+    /// index itself; single-writer during build, read-only at probe time.
     IXJSlice(
         AbstractBufferProvider& bufferProvider,
         SliceStart sliceStart,
         SliceEnd sliceEnd,
         uint64_t numberOfWorkerThreads,
         uint64_t tupleSizeLeft,
-        uint64_t tupleSizeRight);
+        uint64_t tupleSizeRight,
+        bool sharedIndex = true);
 
     [[nodiscard]] uint64_t getNumberOfVectorsPerSide() const { return numberOfWorkerThreads; }
 
@@ -68,6 +72,9 @@ public:
 
 private:
     using SideIndex = folly::Synchronized<std::multimap<uint64_t, uint64_t>>;
+    bool sharedIndex;
+    /// Local mode: [side][worker] unsynchronized indexes.
+    std::vector<std::multimap<uint64_t, uint64_t>> localIndexes[2];
     [[nodiscard]] const SideIndex& indexFor(JoinBuildSideType side) const
     {
         return side == JoinBuildSideType::Left ? leftIndex : rightIndex;

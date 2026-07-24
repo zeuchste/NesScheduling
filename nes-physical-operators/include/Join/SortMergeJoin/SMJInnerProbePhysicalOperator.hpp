@@ -64,7 +64,9 @@ private:
         const PagedVectorRef& rightPagedVector,
         ExecutionContext& executionCtx,
         const nautilus::val<Timestamp>& windowStart,
-        const nautilus::val<Timestamp>& windowEnd) const;
+        const nautilus::val<Timestamp>& windowEnd,
+        const nautilus::val<uint64_t>& rangeIndex,
+        const nautilus::val<uint64_t>& rangeCount) const;
 
     std::shared_ptr<HashFunction> hashFunction;
 };

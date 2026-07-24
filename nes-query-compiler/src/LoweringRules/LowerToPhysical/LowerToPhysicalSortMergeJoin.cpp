@@ -142,7 +142,12 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
     auto sliceStoreRefRight = makeSliceStoreRef(JoinBuildSideType::Right);
 
     auto handler = std::make_shared<NLJOperatorHandler>(
-        inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), InnerJoinTriggerStrategy{});
+        inputOriginIds,
+        outputOriginId,
+        std::move(sliceAndWindowStore),
+        InnerJoinTriggerStrategy{},
+        /// SMJ range-parallel merge: k hash-range probe tasks per window when the range probe is selected.
+        conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES ? conf.joinProbeRanges.getValue() : 1);
 
     const auto handlerId = getNextOperatorHandlerId();
     const NLJBuildPhysicalOperator leftBuildOperator{

@@ -38,10 +38,12 @@ namespace NES
 {
 NLJOperatorHandler::NLJOperatorHandler(
     const std::vector<OriginId>& inputOrigins,
-    const OriginId outputOriginId,
+    OriginId outputOriginId,
     std::unique_ptr<WindowSlicesStoreInterface> sliceAndWindowStore,
-    JoinTriggerStrategy triggerStrategy)
+    JoinTriggerStrategy triggerStrategy,
+    const uint64_t probeRangeTasks)
     : StreamJoinOperatorHandler(inputOrigins, outputOriginId, std::move(sliceAndWindowStore), std::move(triggerStrategy))
+    , probeRangeTasks(probeRangeTasks)
 {
 }
 
@@ -94,24 +96,30 @@ void NLJOperatorHandler::createProbeTasks(
         rightSliceEnds.emplace_back(slice->getSliceEnd());
     }
 
-    /// Allocate variable-sized trigger buffer
+    /// Range-parallel probing: k tasks per window (match-pairs only; null-fill tasks must see everything).
+    const auto rangeTasks = workItem.probeTaskType == ProbeTaskType::MATCH_PAIRS
+        ? std::max<uint64_t>(1, probeRangeTasks != 0 ? probeRangeTasks : numberOfWorkerThreads)
+        : 1;
     const auto neededBufferSize = sizeof(EmittedNLJWindowTrigger) + ((leftSliceEnds.size() + rightSliceEnds.size()) * sizeof(SliceEnd));
-    const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
-    if (not tupleBufferVal.has_value())
+    for (uint64_t rangeIndex = 0; rangeIndex < rangeTasks; ++rangeIndex)
     {
-        throw CannotAllocateBuffer("{}B for the NLJ window trigger were requested", neededBufferSize);
+        const auto tupleBufferVal = pipelineCtx->getBufferManager()->getUnpooledBuffer(neededBufferSize);
+        if (not tupleBufferVal.has_value())
+        {
+            throw CannotAllocateBuffer("{}B for the NLJ window trigger were requested", neededBufferSize);
+        }
+
+        auto tupleBuffer = tupleBufferVal.value();
+        tupleBuffer.setOriginId(outputOriginId);
+        tupleBuffer.setWatermark(windowInfo.windowStart);
+        tupleBuffer.setNumberOfTuples(totalNumberOfTuples);
+        tupleBuffer.setCreationTimestampInMS(Timestamp(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()));
+        new (tupleBuffer.getAvailableMemoryArea().data())
+            EmittedNLJWindowTrigger{windowInfo, leftSliceEnds, rightSliceEnds, workItem.probeTaskType, rangeIndex, rangeTasks};
+
+        probeTasks.emplace_back(std::move(tupleBuffer));
     }
-
-    auto tupleBuffer = tupleBufferVal.value();
-    tupleBuffer.setOriginId(outputOriginId);
-    tupleBuffer.setWatermark(windowInfo.windowStart);
-    tupleBuffer.setNumberOfTuples(totalNumberOfTuples);
-    tupleBuffer.setCreationTimestampInMS(Timestamp(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count()));
-    new (tupleBuffer.getAvailableMemoryArea().data())
-        EmittedNLJWindowTrigger{windowInfo, leftSliceEnds, rightSliceEnds, workItem.probeTaskType};
-
-    probeTasks.emplace_back(std::move(tupleBuffer));
 }
 
 }

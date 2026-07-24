@@ -150,7 +150,10 @@ LoweringRuleResultSubgraph LowerToPhysicalIndexJoin::apply(LogicalOperator logic
     auto sliceStoreRefRight = makeSliceStoreRef(JoinBuildSideType::Right);
 
     auto handler = std::make_shared<IXJOperatorHandler>(
-        inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), InnerJoinTriggerStrategy{});
+        inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), InnerJoinTriggerStrategy{},
+        /// Index locality (build knob applied to the index) and range-parallel probing.
+        conf.joinBuild.getValue() == JoinBuildVariant::SHARED_TABLE,
+        conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES ? conf.joinProbeRanges.getValue() : 1);
 
     const auto handlerId = getNextOperatorHandlerId();
     const IXJBuildPhysicalOperator leftBuildOperator{

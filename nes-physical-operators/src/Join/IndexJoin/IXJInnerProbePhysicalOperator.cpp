@@ -98,6 +98,8 @@ void IXJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordB
     auto rightSliceEndsPtr = readValueFromMemRef<SliceEnd::Underlying*>(getMemberRef(triggerRef, &EmittedNLJWindowTrigger::rightSliceEnds));
     const nautilus::val<SliceEnd> sliceIdLeft{leftSliceEndsPtr[0]};
     const nautilus::val<SliceEnd> sliceIdRight{rightSliceEndsPtr[0]};
+    const auto rangeIndex = readValueFromMemRef<uint64_t>(getMemberRef(triggerRef, &EmittedNLJWindowTrigger::rangeIndex));
+    const auto rangeCount = readValueFromMemRef<uint64_t>(getMemberRef(triggerRef, &EmittedNLJWindowTrigger::rangeCount));
 
     const auto operatorHandlerMemRef = executionCtx.getGlobalOperatorHandler(operatorHandlerId);
     const auto leftSliceRef = invoke(getIXJSliceRefFromEndProxy, operatorHandlerMemRef, sliceIdLeft);
@@ -110,6 +112,11 @@ void IXJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordB
     const auto numRightVectors = invoke(+[](const IXJSlice* slice) { return slice->getNumberOfVectorsPerSide(); }, rightSliceRef);
     for (nautilus::val<uint64_t> rightWorker = 0; rightWorker < numRightVectors; ++rightWorker)
     {
+        /// Range-parallel probing: task i iterates the right worker-vectors with index ≡ i (mod rangeCount).
+        if (rangeCount > 1 and rightWorker % rangeCount != rangeIndex)
+        {
+            continue;
+        }
         const auto rightBufferRef
             = invoke(getVectorBufferProxy, rightSliceRef, rightWorker, nautilus::val<JoinBuildSideType>(JoinBuildSideType::Right));
         const PagedVectorRef rightPagedVector(BorrowedNautilusBuffer::from(rightBufferRef), rightTupleLayout);

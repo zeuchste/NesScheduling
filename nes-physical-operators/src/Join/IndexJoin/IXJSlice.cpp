@@ -31,10 +31,17 @@ IXJSlice::IXJSlice(
     const SliceEnd sliceEnd,
     const uint64_t numberOfWorkerThreads,
     const uint64_t tupleSizeLeft,
-    const uint64_t tupleSizeRight)
+    const uint64_t tupleSizeRight,
+    const bool sharedIndex)
     : NLJSlice(bufferProvider, sliceStart, sliceEnd, numberOfWorkerThreads, tupleSizeLeft, tupleSizeRight)
     , numberOfWorkerThreads(numberOfWorkerThreads)
+    , sharedIndex(sharedIndex)
 {
+    if (not sharedIndex)
+    {
+        localIndexes[0].resize(numberOfWorkerThreads);
+        localIndexes[1].resize(numberOfWorkerThreads);
+    }
 }
 
 void IXJSlice::insertIndexEntry(const JoinBuildSideType side, const WorkerThreadId workerThreadId, const uint64_t keyHash)
@@ -45,13 +52,39 @@ void IXJSlice::insertIndexEntry(const JoinBuildSideType side, const WorkerThread
     const auto worker = workerThreadId % numberOfWorkerThreads;
     INVARIANT(position <= POSITION_MASK, "IXJ index position overflow");
     const auto packed = (static_cast<uint64_t>(worker) << WORKER_SHIFT) | position;
-    indexFor(side).wlock()->emplace(keyHash, packed);
+    if (sharedIndex)
+    {
+        indexFor(side).wlock()->emplace(keyHash, packed);
+    }
+    else
+    {
+        /// Single writer per (side, worker) during the build phase — no synchronization needed.
+        localIndexes[side == JoinBuildSideType::Right][worker].emplace(keyHash, packed);
+    }
 }
 
 IXJSlice::LookupState* IXJSlice::startLookup(const JoinBuildSideType side, const uint64_t keyHash) const
 {
     /// Called at probe time only: the slice is closed, no concurrent inserts remain, but we still take the
     /// read lock to be safe against stragglers.
+    if (not sharedIndex)
+    {
+        /// Local mode: the indexes are immutable at probe time; merge the matches of all worker indexes.
+        LookupState* state = nullptr;
+        for (const auto& index : localIndexes[side == JoinBuildSideType::Right])
+        {
+            const auto [f, l] = index.equal_range(keyHash);
+            for (auto it = f; it != l; ++it)
+            {
+                if (state == nullptr)
+                {
+                    state = new LookupState();
+                }
+                state->matches.push_back(it->second);
+            }
+        }
+        return state;
+    }
     const auto locked = indexFor(side).rlock();
     const auto [first, last] = locked->equal_range(keyHash);
     if (first == last)
