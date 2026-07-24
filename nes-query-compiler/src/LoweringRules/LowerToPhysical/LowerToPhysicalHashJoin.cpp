@@ -112,11 +112,11 @@ HashMapOptions createHashMapOptions(
         fieldKeyNames.emplace_back(fieldExtension.newField.getFullyQualifiedName());
     }
 
-    /// S2/S3 store a per-key PagedVector as the entry value; S1 (SHARED_CHAINS) stores the non-key record
+    /// S2/S3 store a per-key PagedVector as the entry value; S1 (TUPLE_CHAINED) stores the non-key record
     /// fields inline in the entry, so every tuple becomes its own entry on the shared entry pages.
     uint64_t valueSize = 0;
     std::vector<QualifiedIdentifier> fieldValueNames;
-    if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
+    if (storageVariant == JoinStorageVariant::TUPLE_CHAINED)
     {
         for (const auto& field : inputSchema)
         {
@@ -208,10 +208,10 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
     {
         NES_WARNING("join_trigger=EAGER (T2) is not implemented yet; falling back to LAZY (T1).");
     }
-    if (storageVariant == JoinStorageVariant::SHARED_CHAINS and isOuterJoin(join->getJoinType()))
+    if (storageVariant == JoinStorageVariant::TUPLE_CHAINED and isOuterJoin(join->getJoinType()))
     {
-        NES_WARNING("join_storage=SHARED_CHAINS (S1) supports inner joins only; falling back to PER_KEY_PAGED (S2) for this join.");
-        storageVariant = JoinStorageVariant::PER_KEY_PAGED;
+        NES_WARNING("join_storage=TUPLE_CHAINED (S1) supports inner joins only; falling back to KEY_GROUPED (S2) for this join.");
+        storageVariant = JoinStorageVariant::KEY_GROUPED;
     }
 
     /// Our current hash join implementation uses a hash table that requires each key to be 100% identical in terms of no. fields and data types.

@@ -1,6 +1,6 @@
 # name: join/S1Repro.test
 # description: Minimal two-level join regression test. Guards the per-side entry sizes of the hash-join slice:
-#              a join-of-join has different build-side value sizes, which corrupted inline (SHARED_CHAINS) entries
+#              a join-of-join has different build-side value sizes, which corrupted inline (TUPLE_CHAINED) entries
 #              when one shared size was used for both sides.
 # groups: [Join]
 

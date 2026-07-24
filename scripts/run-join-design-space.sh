@@ -89,7 +89,7 @@ run_config "SORT_MERGE_JOIN" SORT_MERGE_JOIN
 run_config "INDEX_JOIN" INDEX_JOIN
 
 ## A1: hash join, storage x build x probe matrix (lazy trigger)
-for storage in PER_KEY_PAGED SHARED_CHAINS FIXED_ARRAY; do
+for storage in KEY_GROUPED TUPLE_CHAINED FIXED_ARRAY; do
     for build in LOCAL_TABLES SHARED_TABLE; do
         for probe in SINGLE_TASK TABLE_BROADCAST TASK_PER_PAIR BUCKET_RANGES; do
             run_config "HASH_${storage}_${build}_${probe}" HASH_JOIN \

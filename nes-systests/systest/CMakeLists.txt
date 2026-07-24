@@ -174,7 +174,7 @@ endif (NOT CODE_COVERAGE)
 ## Design-space matrix for the hash-join knobs (storage S1-S3 x processing P1-P4, lazy trigger):
 ## runs the Join test group once per combination; the golden results must be identical across all of them.
 if (NOT CODE_COVERAGE)
-    foreach (joinStorage IN ITEMS PER_KEY_PAGED SHARED_CHAINS FIXED_ARRAY)
+    foreach (joinStorage IN ITEMS KEY_GROUPED TUPLE_CHAINED FIXED_ARRAY)
         foreach (joinBuild IN ITEMS LOCAL_TABLES SHARED_TABLE)
             foreach (joinProbe IN ITEMS SINGLE_TASK TABLE_BROADCAST TASK_PER_PAIR BUCKET_RANGES)
                 ExternalData_Add_Test(test-data

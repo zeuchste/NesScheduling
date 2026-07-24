@@ -92,7 +92,7 @@ void HJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) con
                 +[](const TupleBuffer* mapBuffer) -> void { ChainedHashMap::lockForSharedInsert(*mapBuffer); }, hashMapBuffer.asArg());
         }
 
-        if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
+        if (storageVariant == JoinStorageVariant::TUPLE_CHAINED)
         {
             /// S1: every tuple becomes its own entry with the value fields inline on the shared entry pages.
             hashMap.insertEntry(record, *hashMapOptions.hashFunction, ctx.pipelineMemoryProvider.bufferProvider);

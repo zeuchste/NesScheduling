@@ -25,10 +25,10 @@ enum class JoinStorageVariant : uint8_t
 {
     /// S2 (default, current main): chained hash map whose entries hold a per-key PagedVector;
     /// scanning the matches of one key is sequential within its pages.
-    PER_KEY_PAGED,
+    KEY_GROUPED,
     /// S1: one entry per tuple, values inline in the shared entry pages; maximal buffer filling,
     /// chain traversal touches many pages.
-    SHARED_CHAINS,
+    TUPLE_CHAINED,
     /// S3: fixed-size bucket array sized from an estimated key cardinality (join_fixed_buckets),
     /// with the existing chains as the hybrid overflow backup; no adaptive resizing.
     FIXED_ARRAY

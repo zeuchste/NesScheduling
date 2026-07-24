@@ -30,7 +30,7 @@ struct CreateNewHJSliceArgs final : CreateNewHashMapSliceArgs
 {
     /// The base keySize/valueSize describe the LEFT side; rightValueSize the RIGHT side. The sides always share the
     /// same key layout (the lowering casts both sides' keys to identical types), but their value sizes differ as soon
-    /// as the storage variant stores the tuples inline (SHARED_CHAINS): each side then needs its own entry size.
+    /// as the storage variant stores the tuples inline (TUPLE_CHAINED): each side then needs its own entry size.
     CreateNewHJSliceArgs(
         const uint64_t keySize,
         const uint64_t valueSize,

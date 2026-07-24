@@ -41,7 +41,7 @@ HJSlice::HJSlice(
     , rightValueSize(createNewHashMapSliceArgs.rightValueSize)
 {
     /// The base constructor eagerly initialized every map with the LEFT side's value size. The two sides may have
-    /// different value sizes (e.g., for the SHARED_CHAINS storage variant, which stores the tuples inline), so
+    /// different value sizes (e.g., for the TUPLE_CHAINED storage variant, which stores the tuples inline), so
     /// re-initialize the right half (indices [perStream, 2*perStream)) with the right side's entry size.
     if (rightValueSize != createNewHashMapSliceArgs.valueSize)
     {

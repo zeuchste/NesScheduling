@@ -42,7 +42,7 @@ public:
         std::shared_ptr<PagedVectorTupleLayout> tupleLayout,
         HashMapOptions hashMapOptions,
         std::unique_ptr<SliceStoreRef> sliceStoreRef,
-        JoinStorageVariant storageVariant = JoinStorageVariant::PER_KEY_PAGED,
+        JoinStorageVariant storageVariant = JoinStorageVariant::KEY_GROUPED,
         bool sharedHashMap = false);
     void execute(ExecutionContext& ctx, Record& record) const override;
 

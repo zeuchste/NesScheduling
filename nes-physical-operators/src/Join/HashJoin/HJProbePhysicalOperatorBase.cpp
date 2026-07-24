@@ -117,7 +117,7 @@ void HJProbePhysicalOperatorBase::performMatchPairsProbe(
         return;
     }
 
-    if (storageVariant == JoinStorageVariant::SHARED_CHAINS)
+    if (storageVariant == JoinStorageVariant::TUPLE_CHAINED)
     {
         performSharedChainsMatchPairsProbe(
             recordBufferRef,

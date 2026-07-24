@@ -78,9 +78,9 @@ public:
     /// Design-space knobs for the stream hash join (storage S1-S3, processing P1-P4, trigger T1/T2).
     EnumOption<JoinStorageVariant> joinStorage
         = {"join_storage",
-           JoinStorageVariant::PER_KEY_PAGED,
+           JoinStorageVariant::KEY_GROUPED,
            "Storage layout of the hash-join build side "
-           "[PER_KEY_PAGED|SHARED_CHAINS|FIXED_ARRAY]."};
+           "[KEY_GROUPED|TUPLE_CHAINED|FIXED_ARRAY]."};
     EnumOption<JoinBuildVariant> joinBuild
         = {"join_build",
            JoinBuildVariant::LOCAL_TABLES,

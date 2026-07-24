@@ -54,7 +54,7 @@ public:
         std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
         HashMapOptions leftHashMapOptions,
         HashMapOptions rightHashMapOptions,
-        JoinStorageVariant storageVariant = JoinStorageVariant::PER_KEY_PAGED);
+        JoinStorageVariant storageVariant = JoinStorageVariant::KEY_GROUPED);
 
 protected:
     /// Pins the hash map TupleBuffer stored as the `index`-th child buffer of the record buffer that `recordBufferRef` points to.
@@ -78,7 +78,7 @@ protected:
     /// Builds a ChainedHashMapRef view over the hash map stored in `hashMapBufferRef` using the key/value layout described by `options`.
     static ChainedHashMapRef makeChainedHashMapRef(const nautilus::val<TupleBuffer*>& hashMapBufferRef, const HashMapOptions& options);
 
-    /// S1 (SHARED_CHAINS) probe: every entry is one tuple with the values inline; walk the opposite chain per entry.
+    /// S1 (TUPLE_CHAINED) probe: every entry is one tuple with the values inline; walk the opposite chain per entry.
     void performSharedChainsMatchPairsProbe(
         const nautilus::val<TupleBuffer*>& recordBufferRef,
         nautilus::val<uint64_t> leftNumberOfHashMaps,
