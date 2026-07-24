@@ -22,4 +22,4 @@ INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id 
 WINDOW SLIDING (current_ms, c_current_ms, SIZE 10 SEC, ADVANCE BY 1 SEC)
 INTO slideChecksum;
 ----
-PLACEHOLDER_SLIDE
+29958749 55761300420
