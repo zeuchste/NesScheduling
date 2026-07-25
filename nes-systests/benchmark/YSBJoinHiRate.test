@@ -1,0 +1,37 @@
+# name: benchmark/YSBJoinHiRate.test
+# description: High-rate Q1: the 25M-row CSV split into four quarters attached to four physical
+#              Memory sources per logical source (8 source threads instead of 2). Same data, same
+#              join, same golden as YSBJoinMem:01 -- only the ingestion ceiling moves.
+# groups: [benchmark, large, Join]
+
+CREATE LOGICAL SOURCE views(user_id UINT64 NOT NULL, page_id UINT64 NOT NULL, campaign_id UINT64 NOT NULL, ad_type UINT64 NOT NULL, event_type UINT64 NOT NULL, current_ms UINT64 NOT NULL, ip UINT64 NOT NULL, d1 UINT64 NOT NULL, d2 UINT64 NOT NULL, d3 UINT32 NOT NULL, d4 UINT16 NOT NULL);
+CREATE PHYSICAL SOURCE FOR views TYPE Memory;
+ATTACH FILE huge/ysb/ysb_q1.csv
+CREATE PHYSICAL SOURCE FOR views TYPE Memory;
+ATTACH FILE huge/ysb/ysb_q2.csv
+CREATE PHYSICAL SOURCE FOR views TYPE Memory;
+ATTACH FILE huge/ysb/ysb_q3.csv
+CREATE PHYSICAL SOURCE FOR views TYPE Memory;
+ATTACH FILE huge/ysb/ysb_q4.csv
+
+CREATE LOGICAL SOURCE clicks(c_user_id UINT64 NOT NULL, c_page_id UINT64 NOT NULL, c_campaign_id UINT64 NOT NULL, c_ad_type UINT64 NOT NULL, c_event_type UINT64 NOT NULL, c_current_ms UINT64 NOT NULL, c_ip UINT64 NOT NULL, c_d1 UINT64 NOT NULL, c_d2 UINT64 NOT NULL, c_d3 UINT32 NOT NULL, c_d4 UINT16 NOT NULL);
+CREATE PHYSICAL SOURCE FOR clicks TYPE Memory;
+ATTACH FILE huge/ysb/ysb_q1.csv
+CREATE PHYSICAL SOURCE FOR clicks TYPE Memory;
+ATTACH FILE huge/ysb/ysb_q2.csv
+CREATE PHYSICAL SOURCE FOR clicks TYPE Memory;
+ATTACH FILE huge/ysb/ysb_q3.csv
+CREATE PHYSICAL SOURCE FOR clicks TYPE Memory;
+ATTACH FILE huge/ysb/ysb_q4.csv
+
+CREATE SINK joinChecksum1s(start UINT64 NOT NULL, end UINT64 NOT NULL, view_user UINT64 NOT NULL, click_user UINT64 NOT NULL, campaign_id UINT64 NOT NULL) TYPE Checksum;
+CREATE SINK joinChecksum10s(start UINT64 NOT NULL, end UINT64 NOT NULL, view_user UINT64 NOT NULL, click_user UINT64 NOT NULL, campaign_id UINT64 NOT NULL) TYPE Checksum;
+
+# Query 1: views x clicks per campaign in 1s tumbling windows (storage/algorithm experiments)
+SELECT start, end, user_id AS view_user, c_user_id AS click_user, campaign_id
+FROM (SELECT * FROM views WHERE event_type < UINT64(1))
+INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id = c_campaign_id
+WINDOW TUMBLING (current_ms, c_current_ms, SIZE 1 SEC)
+INTO joinChecksum1s;
+----
+300935 560080162
