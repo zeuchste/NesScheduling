@@ -1,6 +1,6 @@
 # name: benchmark/YSBJoinXL.test
-# description: Kernel-separation regime: the same join with 5000s tumbling windows -- 5 windows of
-#              ~4.75M views + ~0.75M clicks each (~5000x Q1's per-window state, state >> LLC), so
+# description: Kernel-separation regime: the same join with 500s tumbling windows -- 50 windows of
+#              ~475k views + ~75k clicks each (~500x Q1's per-window state, state >> LLC), so
 #              trigger-kernel complexity and cache locality finally cost measurable time.
 # groups: [benchmark, large, Join]
 
@@ -15,11 +15,11 @@ ATTACH FILE huge/ysb/ysb_10k_data_25000000.csv
 CREATE SINK joinChecksum1s(start UINT64 NOT NULL, end UINT64 NOT NULL, view_user UINT64 NOT NULL, click_user UINT64 NOT NULL, campaign_id UINT64 NOT NULL) TYPE Checksum;
 CREATE SINK joinChecksum10s(start UINT64 NOT NULL, end UINT64 NOT NULL, view_user UINT64 NOT NULL, click_user UINT64 NOT NULL, campaign_id UINT64 NOT NULL) TYPE Checksum;
 
-# Query 1: 5000s windows -- the kernel-separation point
+# Query 1: 500s windows -- the kernel-separation point
 SELECT start, end, user_id AS view_user, c_user_id AS click_user, campaign_id
 FROM (SELECT * FROM views WHERE event_type < UINT64(1))
 INNER JOIN (SELECT * FROM clicks WHERE c_event_type = UINT64(1)) ON campaign_id = c_campaign_id
-WINDOW TUMBLING (current_ms, c_current_ms, SIZE 5000 SEC)
+WINDOW TUMBLING (current_ms, c_current_ms, SIZE 500 SEC)
 INTO joinChecksum1s;
 ----
 0 0
