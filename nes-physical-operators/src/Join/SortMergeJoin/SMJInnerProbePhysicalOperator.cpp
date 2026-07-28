@@ -73,6 +73,9 @@ struct SMJSortState
     /// CompactHashJoin (hash-grouping kernel): per-side bucket-contiguous runs + prefix offsets, shared mask.
     std::vector<uint64_t> offsets[2];
     uint64_t buckets{0};
+    /// Non-empty buckets of the directory side after grouping: a free lower bound on the number of
+    /// distinct keys, produced by the histogram pass and used to right-size sparse tables and filters.
+    uint64_t distinctBuckets{0};
     /// RunHashJoin: per-run sealed bucket-grouped directories over the left side. Each run of
     /// RMJ_RUN_SIZE entries is grouped independently (own bucket count sized to the run); the probe
     /// streams the right side, one bucket lookup per sealed run.
@@ -92,8 +95,10 @@ struct SMJSortState
 
 void bloomBuild(SMJSortState* state)
 {
-    uint64_t words = 64; /// 8 bits/key target, pow2 words of 64 bits
-    while (words * 64 < state->sides[0].size() * 8)
+    /// 8 bits per distinct key when the grouping pass has counted them, else per tuple.
+    const uint64_t keys = state->distinctBuckets != 0 ? state->distinctBuckets : state->sides[0].size();
+    uint64_t words = 64;
+    while (words * 64 < keys * 8)
     {
         words <<= 1;
     }
@@ -139,6 +144,15 @@ void chjGroupSide(SMJSortState* state, const int side)
     {
         ++off[(hash & mask) + 1];
     }
+    if (side == 0)
+    {
+        uint64_t nonEmpty = 0;
+        for (uint64_t b = 1; b <= state->buckets; ++b)
+        {
+            nonEmpty += off[b] != 0;
+        }
+        state->distinctBuckets = nonEmpty;
+    }
     for (uint64_t b = 1; b <= state->buckets; ++b)
     {
         off[b] += off[b - 1];
@@ -152,10 +166,28 @@ void chjGroupSide(SMJSortState* state, const int side)
     state->sides[side] = std::move(out); /// side now bucket-contiguous; offsets index the regions
 }
 
+/// Downsize a sparse table: tuple-count sizing over-allocates by the duplication factor (1,100 tuples
+/// of 10 keys get 2,048 buckets). When the histogram shows occupancy < 25%, regroup at ~2x the observed
+/// distinct-bucket count -- the O(buckets) prefix pass then scales with keys, not tuples.
+void chjMaybeDownsize(SMJSortState* state)
+{
+    if (state->buckets > 64 and state->distinctBuckets * 4 < state->buckets)
+    {
+        uint64_t buckets = 64;
+        while (buckets < state->distinctBuckets * 2)
+        {
+            buckets <<= 1;
+        }
+        state->buckets = buckets;
+        chjGroupSide(state, 0);
+    }
+}
+
 void chjGroup(SMJSortState* state)
 {
     chjSizeBuckets(state);
     chjGroupSide(state, 0);
+    chjMaybeDownsize(state);
     chjGroupSide(state, 1);
 }
 
@@ -291,11 +323,33 @@ uint64_t rhjGroupAndProbe(SMJSortState* state, const uint64_t swapped)
             buckets <<= 1;
         }
         SMJSortState::RhjRun run{lo, buckets, {}};
-        const uint64_t mask = buckets - 1;
+        uint64_t mask = buckets - 1;
         run.offsets.assign(buckets + 1, 0);
         for (uint64_t i = lo; i < hi; ++i)
         {
             ++run.offsets[(left[i].first & mask) + 1];
+        }
+        {   /// downsize sparse runs: prefix cost scales with keys, not tuples
+            uint64_t nonEmpty = 0;
+            for (uint64_t b = 1; b <= buckets; ++b)
+            {
+                nonEmpty += run.offsets[b] != 0;
+            }
+            if (buckets > 64 and nonEmpty * 4 < buckets)
+            {
+                buckets = 64;
+                while (buckets < nonEmpty * 2)
+                {
+                    buckets <<= 1;
+                }
+                run.buckets = buckets;
+                mask = buckets - 1;
+                run.offsets.assign(buckets + 1, 0);
+                for (uint64_t i = lo; i < hi; ++i)
+                {
+                    ++run.offsets[(left[i].first & mask) + 1];
+                }
+            }
         }
         for (uint64_t b = 1; b <= buckets; ++b)
         {
@@ -339,6 +393,7 @@ uint64_t chjOneSidedGroupAndMerge(SMJSortState* state, const uint64_t useBloom, 
 {
     chjSizeBuckets(state);
     chjGroupSide(state, 0);
+    chjMaybeDownsize(state);
     if (useBloom != 0)
     {
         bloomBuild(state);
