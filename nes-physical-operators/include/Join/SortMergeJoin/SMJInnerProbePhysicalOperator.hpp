@@ -68,7 +68,8 @@ public:
         bool oneSided = false,
         bool perSliceRuns = false,
         bool bloomFilter = false,
-        bool pickSmaller = false);
+        bool pickSmaller = false,
+        bool adaptiveStats = true);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -99,6 +100,8 @@ private:
     bool bloomFilter;
     /// join_directory_sides=SMALLER: swap sides at trigger time so the directory covers the smaller input.
     bool pickSmaller;
+    /// join_statistics=ADAPTIVE: exploit the free distinct-key count (table/filter sizing, side choice).
+    bool adaptiveStats;
 
     void performPerSliceJoin(
         const PagedVectorRef& leftPagedVector,

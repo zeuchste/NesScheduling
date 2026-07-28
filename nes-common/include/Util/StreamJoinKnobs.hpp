@@ -93,6 +93,17 @@ enum class JoinPrefilter : uint8_t
     BLOOM
 };
 
+/// The statistics knob: whether trigger-time kernels exploit the distinct-key count their own
+/// histogram pass produces for free (right-sizing tables and filters, choosing the directory side
+/// by key count) -- the runtime signal behind the duplication crossover.
+enum class JoinStatistics : uint8_t
+{
+    NONE,
+    /// Downsize sparse trigger tables (CHJ, RHJ runs) to ~2x the observed key count, size Bloom
+    /// filters per key, and let SMALLER pick the directory side with fewer distinct keys.
+    ADAPTIVE
+};
+
 /// The two trigger variants (T1/T2): when join work happens.
 enum class JoinTriggerVariant : uint8_t
 {

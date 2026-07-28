@@ -111,6 +111,11 @@ public:
            JoinPrefilter::NONE,
            "Auxiliary negative directory checked before the directory probe [NONE|BLOOM]. BLOOM applies to "
            "the one-sided trigger-time kernels."};
+    EnumOption<JoinStatistics> joinStatistics
+        = {"join_statistics",
+           JoinStatistics::ADAPTIVE,
+           "Exploit the free distinct-key count of the trigger kernels [NONE|ADAPTIVE]: right-size sparse "
+           "tables and Bloom filters, choose the SMALLER directory side by key count."};
     EnumOption<JoinTriggerVariant> joinTrigger
         = {"join_trigger",
            JoinTriggerVariant::LAZY,
@@ -140,6 +145,7 @@ private:
             &joinDirectorySides,
             &joinStateScope,
             &joinPrefilter,
+            &joinStatistics,
             &joinTrigger,
             &joinFixedBuckets,
             &sliceCacheConfiguration};

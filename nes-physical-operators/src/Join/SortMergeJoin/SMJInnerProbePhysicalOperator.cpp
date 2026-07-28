@@ -91,12 +91,14 @@ struct SMJSortState
     /// directory probe entirely — the win scales with the miss rate.
     std::vector<uint64_t> bloom;
     uint64_t bloomMask{0};
+    /// join_statistics knob, latched by the operator before the kernel runs.
+    bool adaptive{true};
 };
 
 void bloomBuild(SMJSortState* state)
 {
-    /// 8 bits per distinct key when the grouping pass has counted them, else per tuple.
-    const uint64_t keys = state->distinctBuckets != 0 ? state->distinctBuckets : state->sides[0].size();
+    /// 8 bits per distinct key when the grouping pass has counted them (ADAPTIVE), else per tuple.
+    const uint64_t keys = (state->adaptive and state->distinctBuckets != 0) ? state->distinctBuckets : state->sides[0].size();
     uint64_t words = 64;
     while (words * 64 < keys * 8)
     {
@@ -187,7 +189,10 @@ void chjGroup(SMJSortState* state)
 {
     chjSizeBuckets(state);
     chjGroupSide(state, 0);
-    chjMaybeDownsize(state);
+    if (state->adaptive)
+    {
+        chjMaybeDownsize(state);
+    }
     chjGroupSide(state, 1);
 }
 
@@ -254,9 +259,35 @@ void rmjMarkReady(SMJSortState* state)
 /// one-sided kernels) covers the smaller input; returns 1 when swapped so pair emission can restore
 /// (left, right) order. Decided per trigger — both counts are known here, which is why side selection
 /// is only possible for trigger-time directories.
+/// Distinct-key estimate for the SMALLER decision: non-empty cells of a 16384-bit hash bitmap
+/// (one pass over the already-extracted hashes; saturates at 16k, plenty for per-window key counts).
+uint64_t sidesEstimateDistinct(const std::vector<std::pair<uint64_t, uint64_t>>& side)
+{
+    std::vector<uint64_t> bits(256, 0);
+    for (const auto& [hash, position] : side)
+    {
+        const uint64_t b = hash & 16383;
+        bits[b >> 6] |= 1ULL << (b & 63);
+    }
+    uint64_t n = 0;
+    for (const auto w : bits)
+    {
+        n += static_cast<uint64_t>(__builtin_popcountll(w));
+    }
+    return n;
+}
+
 uint64_t sidesMaybeSwap(SMJSortState* state, const uint64_t pickSmaller)
 {
-    if (pickSmaller != 0 and state->sides[1].size() < state->sides[0].size())
+    if (pickSmaller == 0)
+    {
+        return 0;
+    }
+    /// ADAPTIVE: the cheaper directory side is the one with fewer distinct keys, not fewer tuples.
+    const bool rightSmaller = state->adaptive
+        ? sidesEstimateDistinct(state->sides[1]) < sidesEstimateDistinct(state->sides[0])
+        : state->sides[1].size() < state->sides[0].size();
+    if (rightSmaller)
     {
         std::swap(state->sides[0], state->sides[1]);
         return 1;
@@ -329,6 +360,7 @@ uint64_t rhjGroupAndProbe(SMJSortState* state, const uint64_t swapped)
         {
             ++run.offsets[(left[i].first & mask) + 1];
         }
+        if (state->adaptive)
         {   /// downsize sparse runs: prefix cost scales with keys, not tuples
             uint64_t nonEmpty = 0;
             for (uint64_t b = 1; b <= buckets; ++b)
@@ -393,7 +425,10 @@ uint64_t chjOneSidedGroupAndMerge(SMJSortState* state, const uint64_t useBloom, 
 {
     chjSizeBuckets(state);
     chjGroupSide(state, 0);
-    chjMaybeDownsize(state);
+    if (state->adaptive)
+    {
+        chjMaybeDownsize(state);
+    }
     if (useBloom != 0)
     {
         bloomBuild(state);
@@ -693,7 +728,8 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     const bool oneSided,
     const bool perSliceRuns,
     const bool bloomFilter,
-    const bool pickSmaller)
+    const bool pickSmaller,
+    const bool adaptiveStats)
     : NLJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -709,6 +745,7 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     , perSliceRuns(perSliceRuns)
     , bloomFilter(bloomFilter)
     , pickSmaller(pickSmaller)
+    , adaptiveStats(adaptiveStats)
 {
 }
 
@@ -832,6 +869,10 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
             handlerRef,
             windowStart,
             rangeCount);
+        nautilus::invoke(
+            +[](SMJSortState* st, const uint64_t adaptive) -> void { st->adaptive = adaptive != 0; },
+            state,
+            nautilus::val<uint64_t>(adaptiveStats ? 1 : 0));
         const auto isBuilder = nautilus::invoke(smjTryClaimBuild, state);
         if (isBuilder == 1)
         {
@@ -911,6 +952,10 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
     }
 
     const auto state = nautilus::invoke(smjCreateState);
+    nautilus::invoke(
+        +[](SMJSortState* st, const uint64_t adaptive) -> void { st->adaptive = adaptive != 0; },
+        state,
+        nautilus::val<uint64_t>(adaptiveStats ? 1 : 0));
 
     /// Phase 1: build the (hash, position) runs of both sides.
     const auto appendSide = [&](const PagedVectorRef& pagedVector,

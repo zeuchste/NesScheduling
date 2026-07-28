@@ -92,6 +92,7 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
     const bool pickSmaller = conf.joinDirectorySides.getValue() == JoinDirectorySides::SMALLER;
     const bool perSliceRuns = conf.joinStateScope.getValue() == JoinStateScope::PER_SLICE and kernel != SMJKernel::RUN_HASH;
     const bool bloomFilter = conf.joinPrefilter.getValue() == JoinPrefilter::BLOOM;
+    const bool adaptiveStats = conf.joinStatistics.getValue() == JoinStatistics::ADAPTIVE;
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
     const auto memoryLayoutType = traitSet.get<MemoryLayoutTypeTrait>()->memoryLayout;
     PRECONDITION(std::ranges::size(*outputOriginIds) == 1, "Expected one output origin id");
@@ -224,7 +225,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             oneSided,
             perSliceRuns,
             bloomFilter,
-            pickSmaller),
+            pickSmaller,
+            adaptiveStats),
         physicalOutputSchema,
         physicalOutputSchema,
         memoryLayoutType,
