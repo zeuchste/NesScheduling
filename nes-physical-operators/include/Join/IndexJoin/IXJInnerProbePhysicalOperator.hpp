@@ -46,7 +46,8 @@ public:
         std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
         std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
         std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
-        std::shared_ptr<HashFunction> hashFunction);
+        std::shared_ptr<HashFunction> hashFunction,
+        bool eager = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -59,6 +60,8 @@ private:
     std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout, rightTupleLayout;
     std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames, rightKeyFieldNames;
     std::shared_ptr<HashFunction> hashFunction;
+    /// Eager trigger (T2): drain the slice's pre-found pairs instead of probing the index.
+    bool eager;
 };
 
 }

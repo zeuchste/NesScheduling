@@ -34,6 +34,7 @@ enum class JoinImplementation : uint8_t
     COMPACT_HASH_JOIN,
     RUN_MERGE_JOIN,
     RUN_HASH_JOIN,
+    ADAPTIVE_JOIN,
     CHOICELESS
 };
 

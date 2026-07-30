@@ -41,10 +41,12 @@ IXJOperatorHandler::IXJOperatorHandler(
     std::unique_ptr<WindowSlicesStoreInterface> sliceAndWindowStore,
     JoinTriggerStrategy triggerStrategy,
     const bool sharedIndex,
-    const uint64_t probeRangeTasks)
+    const uint64_t probeRangeTasks,
+    const bool eager)
     : StreamJoinOperatorHandler(inputOrigins, outputOriginId, std::move(sliceAndWindowStore), std::move(triggerStrategy))
     , sharedIndex(sharedIndex)
     , probeRangeTasks(probeRangeTasks)
+    , eager(eager)
 {
 }
 
@@ -59,8 +61,12 @@ IXJOperatorHandler::getCreateNewSlicesFunction(const CreateNewSlicesArguments& a
          bufferProvider = nljArgs.bufferProvider,
          tupleSizeLeft = nljArgs.tupleSizeLeft,
          tupleSizeRight = nljArgs.tupleSizeRight,
-         sharedIndex = sharedIndex](SliceStart start, SliceEnd end) -> std::vector<std::shared_ptr<Slice>>
-        { return {std::make_shared<IXJSlice>(*bufferProvider, start, end, numberOfWorkerThreads, tupleSizeLeft, tupleSizeRight, sharedIndex)}; });
+         sharedIndex = sharedIndex,
+         eager = eager](SliceStart start, SliceEnd end) -> std::vector<std::shared_ptr<Slice>>
+        {
+            return {std::make_shared<IXJSlice>(
+                *bufferProvider, start, end, numberOfWorkerThreads, tupleSizeLeft, tupleSizeRight, sharedIndex, eager)};
+        });
 }
 
 void IXJOperatorHandler::createProbeTasks(

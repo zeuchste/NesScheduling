@@ -48,7 +48,9 @@ enum class SMJKernel : uint8_t
     SORT,
     HASH_GROUP,
     RUN_MERGE,
-    RUN_HASH
+    RUN_HASH,
+    /// Kernel chosen per trigger from the free distinct-key estimate (the duplication crossover as policy).
+    ADAPTIVE
 };
 
 class SMJInnerProbePhysicalOperator final : public NLJProbePhysicalOperatorBase

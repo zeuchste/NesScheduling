@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <unordered_map>
@@ -49,7 +51,8 @@ public:
         uint64_t numberOfWorkerThreads,
         uint64_t tupleSizeLeft,
         uint64_t tupleSizeRight,
-        bool sharedIndex = true);
+        bool sharedIndex = true,
+        bool eager = false);
 
     [[nodiscard]] uint64_t getNumberOfVectorsPerSide() const { return numberOfWorkerThreads; }
 
@@ -57,6 +60,19 @@ public:
     /// the given key hash. Must be called immediately before the corresponding pushBack, from the owning
     /// worker thread (the vector count read here is only stable for the caller's own vector).
     void insertIndexEntry(JoinBuildSideType side, WorkerThreadId workerThreadId, uint64_t keyHash);
+
+    /// Eager trigger (T2): register the upcoming tuple in the own side's index AND probe the opposite
+    /// side's index in the same call. Matches are appended as (leftPacked, rightPacked) to the calling
+    /// worker's pair list (single-writer, unsynchronized) and drained at trigger time. Exactly-once under
+    /// two-sided concurrent inserts: the sequence number is drawn under the own side's write lock, and a
+    /// probe only accepts entries with a smaller sequence -- the racing pair is emitted by exactly the
+    /// later of the two inserts.
+    void insertAndProbeEager(JoinBuildSideType side, WorkerThreadId workerThreadId, uint64_t keyHash);
+
+    /// Drain accessors for the eager pair lists (called at trigger time only; no concurrent writers left).
+    [[nodiscard]] uint64_t eagerPairCount(const uint64_t worker) const { return eagerPairs[worker].size(); }
+    [[nodiscard]] uint64_t eagerPairLeft(const uint64_t worker, const uint64_t i) const { return eagerPairs[worker][i][0]; }
+    [[nodiscard]] uint64_t eagerPairRight(const uint64_t worker, const uint64_t i) const { return eagerPairs[worker][i][1]; }
 
     /// Snapshot of all index matches for a key hash on one side. Values pack (worker << WORKER_SHIFT) | position.
     /// Returns nullptr if there is no match. The returned state deletes itself when next() returns LOOKUP_END.
@@ -71,7 +87,9 @@ public:
     static constexpr uint64_t POSITION_MASK = (uint64_t{1} << WORKER_SHIFT) - 1;
 
 private:
-    using SideIndex = folly::Synchronized<std::multimap<uint64_t, uint64_t>>;
+    /// Index entry: (packed worker/position, insertion sequence). The sequence is 0 in lazy mode and only
+    /// read by the eager probe.
+    using SideIndex = folly::Synchronized<std::multimap<uint64_t, std::pair<uint64_t, uint64_t>>>;
     [[nodiscard]] const SideIndex& indexFor(JoinBuildSideType side) const
     {
         return side == JoinBuildSideType::Left ? leftIndex : rightIndex;
@@ -80,6 +98,10 @@ private:
 
     uint64_t numberOfWorkerThreads;
     bool sharedIndex;
+    bool eager;
+    /// Eager mode: global insertion sequence and per-worker (leftPacked, rightPacked) match lists.
+    std::atomic<uint64_t> eagerSeq{0};
+    std::vector<std::vector<std::array<uint64_t, 2>>> eagerPairs;
     /// Local mode: [side][worker] unsynchronized indexes.
     std::vector<std::multimap<uint64_t, uint64_t>> localIndexes[2];
 

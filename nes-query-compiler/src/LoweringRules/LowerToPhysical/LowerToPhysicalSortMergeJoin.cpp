@@ -83,6 +83,9 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             case JoinImplementation::RUN_HASH_JOIN:
                 kernel = SMJKernel::RUN_HASH;
                 break;
+            case JoinImplementation::ADAPTIVE_JOIN:
+                kernel = SMJKernel::ADAPTIVE;
+                break;
             default:
                 break;
         }
@@ -90,7 +93,9 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
     /// RUN_HASH is one-sided by construction and runs single-task, per-window only.
     const bool oneSided = conf.joinDirectorySides.getValue() != JoinDirectorySides::BOTH or kernel == SMJKernel::RUN_HASH;
     const bool pickSmaller = conf.joinDirectorySides.getValue() == JoinDirectorySides::SMALLER;
-    const bool perSliceRuns = conf.joinStateScope.getValue() == JoinStateScope::PER_SLICE and kernel != SMJKernel::RUN_HASH;
+    /// ADAPTIVE decides sort vs. grouping per trigger, so it excludes the kernel-specific per-slice cache.
+    const bool perSliceRuns = conf.joinStateScope.getValue() == JoinStateScope::PER_SLICE and kernel != SMJKernel::RUN_HASH
+        and kernel != SMJKernel::ADAPTIVE;
     const bool bloomFilter = conf.joinPrefilter.getValue() == JoinPrefilter::BLOOM;
     const bool adaptiveStats = conf.joinStatistics.getValue() == JoinStatistics::ADAPTIVE;
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
@@ -176,7 +181,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
         InnerJoinTriggerStrategy{},
         /// SMJ range-parallel merge: k hash-range probe tasks per window when the range probe is selected.
         /// One-sided and per-slice kernels are single-task probes.
-        not oneSided and not perSliceRuns and conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES
+        not oneSided and not perSliceRuns and kernel != SMJKernel::ADAPTIVE
+                and conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES
             ? conf.joinProbeRanges.getValue()
             : 1);
 

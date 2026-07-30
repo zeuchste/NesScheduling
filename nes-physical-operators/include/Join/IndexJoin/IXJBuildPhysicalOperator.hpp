@@ -43,7 +43,8 @@ public:
         std::vector<PhysicalFunction> keyFunctions,
         std::vector<Record::RecordFieldIdentifier> keyFieldNames,
         std::shared_ptr<HashFunction> hashFunction,
-        bool maintainIndex = true);
+        bool maintainIndex = true,
+        bool eager = false);
     void execute(ExecutionContext& ctx, Record& record) const override;
 
 private:
@@ -53,6 +54,8 @@ private:
     /// One-sided directory: the probe only queries the LEFT index, so the right side's index
     /// maintenance can be skipped entirely (tuples are still appended).
     bool maintainIndex;
+    /// Eager trigger (T2): insert-and-probe on every arrival instead of index maintenance only.
+    bool eager;
 };
 
 }

@@ -41,7 +41,8 @@ public:
         std::unique_ptr<WindowSlicesStoreInterface> sliceAndWindowStore,
         JoinTriggerStrategy triggerStrategy,
         bool sharedIndex = true,
-        uint64_t probeRangeTasks = 1);
+        uint64_t probeRangeTasks = 1,
+        bool eager = false);
 
     [[nodiscard]] std::function<std::vector<std::shared_ptr<Slice>>(SliceStart, SliceEnd)>
     getCreateNewSlicesFunction(const CreateNewSlicesArguments& args) const override;
@@ -63,6 +64,7 @@ private:
     std::array<WorkerSliceCache, MAX_CACHED_WORKERS> indexInsertCaches{};
     bool sharedIndex;
     uint64_t probeRangeTasks;
+    bool eager;
 
     void createProbeTasks(
         const ProbeWorkItem& workItem,

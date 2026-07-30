@@ -42,6 +42,7 @@
 #include <function.hpp>
 #include <static.hpp>
 #include <val_arith.hpp>
+#include <val_bool.hpp>
 #include <val_ptr.hpp>
 
 namespace NES
@@ -74,13 +75,15 @@ IXJInnerProbePhysicalOperator::IXJInnerProbePhysicalOperator(
     std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
     std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
     std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
-    std::shared_ptr<HashFunction> hashFunction)
+    std::shared_ptr<HashFunction> hashFunction,
+    const bool eager)
     : StreamJoinProbePhysicalOperator(operatorHandlerId, std::move(joinFunction), std::move(windowMetaData), joinSchema)
     , leftTupleLayout(std::move(leftTupleLayout))
     , rightTupleLayout(std::move(rightTupleLayout))
     , leftKeyFieldNames(std::move(leftKeyFieldNames))
     , rightKeyFieldNames(std::move(rightKeyFieldNames))
     , hashFunction(std::move(hashFunction))
+    , eager(eager)
 {
 }
 
@@ -108,6 +111,60 @@ void IXJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordB
     const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
     const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
 
+    /// Eager trigger (T2): same-slice matches were already found at insert time, so the trigger only
+    /// drains the pre-computed pair lists and verifies the predicate. Cross-slice combinations under
+    /// sliding windows carry no eager pairs (a tuple only probes the slice it lands into), so they fall
+    /// through to the lazy index path below.
+    nautilus::val<bool> lazyPath{true};
+    if (eager)
+    {
+        const auto sameSlice = leftSliceEndsPtr[0] == rightSliceEndsPtr[0];
+        if (sameSlice)
+        {
+            lazyPath = false;
+            const auto numWorkers = invoke(+[](const IXJSlice* slice) { return slice->getNumberOfVectorsPerSide(); }, leftSliceRef);
+            for (nautilus::val<uint64_t> worker = 0; worker < numWorkers; ++worker)
+            {
+                const auto pairCount = invoke(
+                    +[](const IXJSlice* slice, const uint64_t w) { return slice->eagerPairCount(w); }, leftSliceRef, worker);
+                for (nautilus::val<uint64_t> i = 0; i < pairCount; ++i)
+                {
+                    const auto leftPacked = invoke(
+                        +[](const IXJSlice* slice, const uint64_t w, const uint64_t idx) { return slice->eagerPairLeft(w, idx); },
+                        leftSliceRef,
+                        worker,
+                        i);
+                    const auto rightPacked = invoke(
+                        +[](const IXJSlice* slice, const uint64_t w, const uint64_t idx) { return slice->eagerPairRight(w, idx); },
+                        leftSliceRef,
+                        worker,
+                        i);
+                    const auto leftBufferRef = invoke(
+                        getVectorBufferProxy,
+                        leftSliceRef,
+                        leftPacked >> IXJSlice::WORKER_SHIFT,
+                        nautilus::val<JoinBuildSideType>(JoinBuildSideType::Left));
+                    const PagedVectorRef leftPagedVector(BorrowedNautilusBuffer::from(leftBufferRef), leftTupleLayout);
+                    const auto leftRecord = leftPagedVector.at(leftPacked & IXJSlice::POSITION_MASK);
+                    const auto rightBufferRef = invoke(
+                        getVectorBufferProxy,
+                        rightSliceRef,
+                        rightPacked >> IXJSlice::WORKER_SHIFT,
+                        nautilus::val<JoinBuildSideType>(JoinBuildSideType::Right));
+                    const PagedVectorRef rightPagedVector(BorrowedNautilusBuffer::from(rightBufferRef), rightTupleLayout);
+                    const auto rightRecord = rightPagedVector.at(rightPacked & IXJSlice::POSITION_MASK);
+
+                    auto joinedRecord = createJoinedRecord(leftRecord, rightRecord, windowStart, windowEnd, leftFields, rightFields);
+                    if (joinFunction.execute(joinedRecord, executionCtx.pipelineMemoryProvider.arena))
+                    {
+                        executeChild(executionCtx, joinedRecord);
+                    }
+                }
+            }
+        }
+    }
+    if (lazyPath)
+    {
     /// Iterate the right side's per-worker vectors; per tuple, one logarithmic lookup in the left shared index.
     const auto numRightVectors = invoke(+[](const IXJSlice* slice) { return slice->getNumberOfVectorsPerSide(); }, rightSliceRef);
     for (nautilus::val<uint64_t> rightWorker = 0; rightWorker < numRightVectors; ++rightWorker)
@@ -179,6 +236,7 @@ void IXJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordB
                 }
             }
         }
+    }
     }
 }
 

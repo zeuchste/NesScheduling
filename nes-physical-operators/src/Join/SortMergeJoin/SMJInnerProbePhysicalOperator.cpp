@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <mutex>
@@ -259,10 +260,13 @@ void rmjMarkReady(SMJSortState* state)
 /// one-sided kernels) covers the smaller input; returns 1 when swapped so pair emission can restore
 /// (left, right) order. Decided per trigger — both counts are known here, which is why side selection
 /// is only possible for trigger-time directories.
-/// Distinct-key estimate for the SMALLER decision: non-empty cells of a 16384-bit hash bitmap
-/// (one pass over the already-extracted hashes; saturates at 16k, plenty for per-window key counts).
+/// Distinct-key estimate from a 16384-bit hash bitmap (one pass over the already-extracted hashes),
+/// with the linear-counting correction of Whang et al.: distinct ~= -m ln(empty/m). Accurate to a few
+/// percent up to ~10x the bitmap size; a saturated bitmap falls back to "all distinct". Drives the
+/// SMALLER side choice and the ADAPTIVE kernel decision.
 uint64_t sidesEstimateDistinct(const std::vector<std::pair<uint64_t, uint64_t>>& side)
 {
+    constexpr double m = 16384.0;
     std::vector<uint64_t> bits(256, 0);
     for (const auto& [hash, position] : side)
     {
@@ -274,7 +278,11 @@ uint64_t sidesEstimateDistinct(const std::vector<std::pair<uint64_t, uint64_t>>&
     {
         n += static_cast<uint64_t>(__builtin_popcountll(w));
     }
-    return n;
+    if (n == 0 or n >= 16384)
+    {
+        return n == 0 ? 0 : side.size();
+    }
+    return static_cast<uint64_t>(-m * std::log((m - static_cast<double>(n)) / m));
 }
 
 uint64_t sidesMaybeSwap(SMJSortState* state, const uint64_t pickSmaller)
@@ -671,6 +679,25 @@ uint64_t rmjSortAndMerge(SMJSortState* state)
 
 /// join_state_scope=PER_SLICE proxies: claim/append/seal/wait on the slice-owned sorted runs, then merge
 /// the left run of the left slice with the right run of the right slice into a task-local pair list.
+/// ADAPTIVE kernel: the per-trigger policy. The duplication crossover of the evaluation (tuples per key
+/// ~40-60) is runtime-observable from the free distinct-key estimate, so the kernel is chosen per window:
+/// below the boundary, comparison sort (no bucket memory, best at low duplication); at or above it, O(n)
+/// hash grouping whose adaptive downsizing keeps trigger tables key-proportional (the better tail under
+/// heavy duplication). All kernels emit the same candidate-pair format, so the probe path is unchanged.
+constexpr uint64_t ADAPTIVE_DUP_BOUNDARY = 48;
+
+uint64_t smjAdaptiveKernel(SMJSortState* state, const uint64_t oneSided, const uint64_t useBloom, const uint64_t swapped)
+{
+    const uint64_t n = state->sides[0].size();
+    const uint64_t keys = sidesEstimateDistinct(state->sides[0]);
+    const uint64_t dup = keys != 0 ? n / keys : 0;
+    if (dup >= ADAPTIVE_DUP_BOUNDARY)
+    {
+        return oneSided != 0 ? chjOneSidedGroupAndMerge(state, useBloom, swapped) : chjGroupAndMerge(state);
+    }
+    return oneSided != 0 ? smjOneSidedSortAndMerge(state, useBloom, swapped) : smjSortAndMerge(state);
+}
+
 uint64_t sliceTryClaimRun(NLJSlice* slice, const uint64_t side)
 {
     return slice->tryClaimSortedRun(side) ? 1 : 0;
@@ -905,6 +932,7 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
                     nautilus::invoke(rmjMarkReady, state);
                     break;
                 case SMJKernel::SORT:
+                case SMJKernel::ADAPTIVE: /// unreachable: ADAPTIVE is forced to a single task by the lowering
                 case SMJKernel::RUN_HASH: /// unreachable: RUN_HASH is forced to a single task by the lowering
                     nautilus::invoke(smjMarkReady, state);
                     break;
@@ -990,6 +1018,9 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
             : nautilus::val<uint64_t>(0);
         switch (kernel)
         {
+            case SMJKernel::ADAPTIVE:
+                return nautilus::invoke(
+                    smjAdaptiveKernel, state, nautilus::val<uint64_t>(oneSided ? 1 : 0), useBloom, swapped);
             case SMJKernel::RUN_HASH:
                 return nautilus::invoke(rhjGroupAndProbe, state, swapped);
             case SMJKernel::HASH_GROUP:

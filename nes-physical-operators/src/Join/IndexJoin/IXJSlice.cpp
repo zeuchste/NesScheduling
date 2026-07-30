@@ -14,7 +14,9 @@
 
 #include <Join/IndexJoin/IXJSlice.hpp>
 
+#include <array>
 #include <cstdint>
+#include <utility>
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/PagedVector/PagedVector.hpp>
 #include <Join/StreamJoinUtil.hpp>
@@ -32,12 +34,18 @@ IXJSlice::IXJSlice(
     const uint64_t numberOfWorkerThreads,
     const uint64_t tupleSizeLeft,
     const uint64_t tupleSizeRight,
-    const bool sharedIndex)
+    const bool sharedIndex,
+    const bool eager)
     : NLJSlice(bufferProvider, sliceStart, sliceEnd, numberOfWorkerThreads, tupleSizeLeft, tupleSizeRight)
     , numberOfWorkerThreads(numberOfWorkerThreads)
-    , sharedIndex(sharedIndex)
+    , sharedIndex(sharedIndex or eager) /// the eager probe reads the opposite side's index concurrently
+    , eager(eager)
 {
-    if (not sharedIndex)
+    if (eager)
+    {
+        eagerPairs.resize(numberOfWorkerThreads);
+    }
+    if (not this->sharedIndex)
     {
         localIndexes[0].resize(numberOfWorkerThreads);
         localIndexes[1].resize(numberOfWorkerThreads);
@@ -54,12 +62,45 @@ void IXJSlice::insertIndexEntry(const JoinBuildSideType side, const WorkerThread
     const auto packed = (static_cast<uint64_t>(worker) << WORKER_SHIFT) | position;
     if (sharedIndex)
     {
-        indexFor(side).wlock()->emplace(keyHash, packed);
+        indexFor(side).wlock()->emplace(keyHash, std::pair{packed, uint64_t{0}});
     }
     else
     {
         /// Single writer per (side, worker) during the build phase — no synchronization needed.
         localIndexes[side == JoinBuildSideType::Right][worker].emplace(keyHash, packed);
+    }
+}
+
+void IXJSlice::insertAndProbeEager(const JoinBuildSideType side, const WorkerThreadId workerThreadId, const uint64_t keyHash)
+{
+    const auto* vectorBuffer = getPagedVectorTupleBufferRef(workerThreadId, side);
+    const auto position = PagedVector::load(*vectorBuffer).getTotalNumberOfRecords();
+    const auto worker = workerThreadId % numberOfWorkerThreads;
+    INVARIANT(position <= POSITION_MASK, "IXJ index position overflow");
+    const auto packed = (static_cast<uint64_t>(worker) << WORKER_SHIFT) | position;
+
+    /// Sequence draw and own-side insert are one critical section: a probe that misses this entry then
+    /// provably carries a smaller sequence, so the missed pair is emitted by the other insert instead.
+    uint64_t seq = 0;
+    {
+        const auto locked = indexFor(side).wlock();
+        seq = eagerSeq.fetch_add(1, std::memory_order_relaxed);
+        locked->emplace(keyHash, std::pair{packed, seq});
+    }
+
+    /// Probe the opposite side's index; accept only entries inserted earlier (entrySeq < ownSeq).
+    const auto opposite = side == JoinBuildSideType::Left ? JoinBuildSideType::Right : JoinBuildSideType::Left;
+    auto& pairs = eagerPairs[worker];
+    const auto locked = indexFor(opposite).rlock();
+    const auto [first, last] = locked->equal_range(keyHash);
+    for (auto it = first; it != last; ++it)
+    {
+        if (it->second.second < seq)
+        {
+            const auto other = it->second.first;
+            pairs.push_back(
+                side == JoinBuildSideType::Left ? std::array<uint64_t, 2>{packed, other} : std::array<uint64_t, 2>{other, packed});
+        }
     }
 }
 
@@ -94,7 +135,7 @@ IXJSlice::LookupState* IXJSlice::startLookup(const JoinBuildSideType side, const
     auto* state = new LookupState();
     for (auto it = first; it != last; ++it)
     {
-        state->matches.push_back(it->second);
+        state->matches.push_back(it->second.first);
     }
     return state;
 }

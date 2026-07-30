@@ -206,7 +206,9 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
     const auto probeRanges = conf.joinProbeRanges.getValue();
     if (conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER)
     {
-        NES_WARNING("join_trigger=EAGER (T2) is not implemented yet; falling back to LAZY (T1).");
+        NES_WARNING(
+            "join_trigger=EAGER (T2) is implemented for the index join (join_strategy=INDEX_JOIN) only; "
+            "falling back to LAZY (T1) for the hash join.");
     }
     if (storageVariant == JoinStorageVariant::TUPLE_CHAINED and isOuterJoin(join->getJoinType()))
     {

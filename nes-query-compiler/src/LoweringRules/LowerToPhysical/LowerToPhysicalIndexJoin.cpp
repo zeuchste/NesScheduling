@@ -149,11 +149,15 @@ LoweringRuleResultSubgraph LowerToPhysicalIndexJoin::apply(LogicalOperator logic
     auto sliceStoreRefLeft = makeSliceStoreRef(JoinBuildSideType::Left);
     auto sliceStoreRefRight = makeSliceStoreRef(JoinBuildSideType::Right);
 
+    /// Eager trigger (T2): join work happens per arriving tuple (insert-and-probe); the trigger only
+    /// drains pre-found pairs. Requires the shared index on both sides and a single drain task.
+    const bool eager = conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER;
     auto handler = std::make_shared<IXJOperatorHandler>(
         inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), InnerJoinTriggerStrategy{},
         /// Index locality (build knob applied to the index) and range-parallel probing.
-        conf.joinBuild.getValue() == JoinBuildVariant::SHARED_TABLE,
-        conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES ? conf.joinProbeRanges.getValue() : 1);
+        eager or conf.joinBuild.getValue() == JoinBuildVariant::SHARED_TABLE,
+        not eager and conf.joinProbe.getValue() == JoinProbeVariant::BUCKET_RANGES ? conf.joinProbeRanges.getValue() : 1,
+        eager);
 
     const auto handlerId = getNextOperatorHandlerId();
     const IXJBuildPhysicalOperator leftBuildOperator{
@@ -164,9 +168,12 @@ LoweringRuleResultSubgraph LowerToPhysicalIndexJoin::apply(LogicalOperator logic
         std::move(sliceStoreRefLeft),
         toKeyFunctions(leftKeyFieldNames),
         leftKeyFieldNames,
-        std::make_shared<MurMur3HashFunction>()};
+        std::make_shared<MurMur3HashFunction>(),
+        true,
+        eager};
     /// One-sided directories: the probe only queries the left index, so the right index is skipped.
-    const bool maintainRightIndex = conf.joinDirectorySides.getValue() == JoinDirectorySides::BOTH;
+    /// The eager insert probes both indexes, so eager forces both sides to maintain theirs.
+    const bool maintainRightIndex = eager or conf.joinDirectorySides.getValue() == JoinDirectorySides::BOTH;
     const IXJBuildPhysicalOperator rightBuildOperator{
         handlerId,
         JoinBuildSideType::Right,
@@ -176,7 +183,8 @@ LoweringRuleResultSubgraph LowerToPhysicalIndexJoin::apply(LogicalOperator logic
         toKeyFunctions(rightKeyFieldNames),
         rightKeyFieldNames,
         std::make_shared<MurMur3HashFunction>(),
-        maintainRightIndex};
+        maintainRightIndex,
+        eager};
 
     auto joinSchema = JoinSchema(newLeftInputSchema, newRightInputSchema, physicalOutputSchema);
 
@@ -212,7 +220,8 @@ LoweringRuleResultSubgraph LowerToPhysicalIndexJoin::apply(LogicalOperator logic
             rightTupleLayout,
             leftKeyFieldNames,
             rightKeyFieldNames,
-            std::make_shared<MurMur3HashFunction>()),
+            std::make_shared<MurMur3HashFunction>(),
+            eager),
         physicalOutputSchema,
         physicalOutputSchema,
         memoryLayoutType,

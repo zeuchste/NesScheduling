@@ -47,12 +47,13 @@ IXJBuildPhysicalOperator::IXJBuildPhysicalOperator(
     std::unique_ptr<SliceStoreRef> sliceStoreRef,
     std::vector<PhysicalFunction> keyFunctions,
     std::vector<Record::RecordFieldIdentifier> keyFieldNames,
-    std::shared_ptr<HashFunction> hashFunction, const bool maintainIndex)
+    std::shared_ptr<HashFunction> hashFunction, const bool maintainIndex, const bool eager)
     : StreamJoinBuildPhysicalOperator{operatorHandlerId, joinBuildSide, std::move(timeFunction), std::move(tupleLayout), std::move(sliceStoreRef)}
     , keyFunctions(std::move(keyFunctions))
     , keyFieldNames(std::move(keyFieldNames))
     , hashFunction(std::move(hashFunction))
     , maintainIndex(maintainIndex)
+    , eager(eager)
 {
 }
 
@@ -86,7 +87,27 @@ void IXJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) co
         /// 1) Incremental index maintenance: register the upcoming tuple position in the shared, synchronized index.
         /// The owning slice is resolved through the handler's per-worker cache (lock-free on the hot path).
         /// Skipped entirely under one-sided directories (the probe never queries the right index).
-        if (maintainIndex)
+        /// Eager trigger (T2): the insert additionally probes the opposite side's index; the pre-found
+        /// pairs are drained by the probe operator at trigger time.
+        if (eager)
+        {
+            nautilus::invoke(
+                +[](OperatorHandler* handler,
+                    const Timestamp ts,
+                    const WorkerThreadId workerThreadId,
+                    const JoinBuildSideType side,
+                    const uint64_t keyHash) -> void
+                {
+                    dynamic_cast<IXJOperatorHandler*>(handler)->sliceForIndexInsert(ts, workerThreadId)
+                        ->insertAndProbeEager(side, workerThreadId, keyHash);
+                },
+                ctx.getGlobalOperatorHandler(operatorHandlerId),
+                timestamp,
+                ctx.workerThreadId,
+                nautilus::val<JoinBuildSideType>(joinBuildSide),
+                hash);
+        }
+        else if (maintainIndex)
         nautilus::invoke(
             +[](OperatorHandler* handler,
                 const Timestamp ts,
