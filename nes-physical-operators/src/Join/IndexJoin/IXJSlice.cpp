@@ -39,7 +39,6 @@ IXJSlice::IXJSlice(
     : NLJSlice(bufferProvider, sliceStart, sliceEnd, numberOfWorkerThreads, tupleSizeLeft, tupleSizeRight)
     , numberOfWorkerThreads(numberOfWorkerThreads)
     , sharedIndex(sharedIndex or eager) /// the eager probe reads the opposite side's index concurrently
-    , eager(eager)
 {
     if (eager)
     {

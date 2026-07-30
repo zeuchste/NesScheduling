@@ -98,7 +98,6 @@ private:
 
     uint64_t numberOfWorkerThreads;
     bool sharedIndex;
-    bool eager;
     /// Eager mode: global insertion sequence and per-worker (leftPacked, rightPacked) match lists.
     std::atomic<uint64_t> eagerSeq{0};
     std::vector<std::vector<std::array<uint64_t, 2>>> eagerPairs;
