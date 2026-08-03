@@ -14,7 +14,10 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <mutex>
+#include <vector>
 #include <Identifiers/Identifiers.hpp>
 #include <Interface/HashMap/HashMap.hpp>
 #include <Join/StreamJoinUtil.hpp>
@@ -67,10 +70,27 @@ public:
     [[nodiscard]] const TupleBuffer* getHashMapBufferRefForSide(WorkerThreadId workerThreadId, const JoinBuildSideType& buildSide) const;
     [[nodiscard]] uint64_t getNumberOfHashMapsForSide() const;
 
+    /// Eager trigger (T2, symmetric hash join): every {insert own + probe opposite} runs under this single
+    /// per-slice mutex. The strict total order over both sides' inserts makes pairing exactly-once without
+    /// sequence numbers: the later insert always sees the earlier, completed one and never itself.
+    /// ponytail: one global eager lock per slice -- the classic symmetric-hash-join price; per-bucket
+    /// latches are the upgrade path if eager throughput ever matters.
+    void eagerLock() { eagerMutex.lock(); }
+    void eagerUnlock() { eagerMutex.unlock(); }
+    /// Records one matched (left entry, right entry) pointer pair; caller holds the eager mutex.
+    void eagerRecordPair(const uint64_t leftEntry, const uint64_t rightEntry) { eagerPairs.push_back({leftEntry, rightEntry}); }
+    /// Drain accessors, called at trigger time only (no concurrent inserts remain).
+    [[nodiscard]] uint64_t eagerPairCount() const { return eagerPairs.size(); }
+    [[nodiscard]] uint64_t eagerPairLeft(const uint64_t i) const { return eagerPairs[i][0]; }
+    [[nodiscard]] uint64_t eagerPairRight(const uint64_t i) const { return eagerPairs[i][1]; }
+
 private:
     /// Value size for right-side maps; the base createNewHashMapSliceArgs (stored sliced in HashMapSlice) keeps the
     /// left side's sizes.
     uint64_t rightValueSize;
+    /// Eager state; see eagerLock().
+    std::mutex eagerMutex;
+    std::vector<std::array<uint64_t, 2>> eagerPairs;
 };
 
 }

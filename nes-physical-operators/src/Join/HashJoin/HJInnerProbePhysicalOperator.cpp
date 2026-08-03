@@ -47,7 +47,8 @@ HJInnerProbePhysicalOperator::HJInnerProbePhysicalOperator(
     HashMapOptions leftHashMapBasedOptions,
     HashMapOptions rightHashMapBasedOptions,
     const JoinStorageVariant storageVariant,
-    const JoinStorageVariant rightStorageVariant)
+    const JoinStorageVariant rightStorageVariant,
+    const bool eager)
     : HJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -58,7 +59,8 @@ HJInnerProbePhysicalOperator::HJInnerProbePhysicalOperator(
           std::move(leftHashMapBasedOptions),
           std::move(rightHashMapBasedOptions),
           storageVariant,
-          rightStorageVariant)
+          rightStorageVariant,
+          eager)
 {
 }
 
@@ -81,15 +83,24 @@ void HJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordBu
     const auto rightPageStart
         = readValueFromMemRef<uint64_t>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightPageStart));
     const auto rightPageEnd = readValueFromMemRef<uint64_t>(getMemberRef(hashJoinWindowRef, &EmittedHJWindowTrigger::rightPageEnd));
-    /// The hash map buffers themselves are stored as child buffers of the record buffer, not as raw pointers in the trigger struct
-    performMatchPairsProbe(
-        recordBuffer.getReference(),
-        leftNumberOfHashMaps,
-        rightNumberOfHashMaps,
-        executionCtx,
-        windowStart,
-        windowEnd,
-        rightPageStart,
-        rightPageEnd);
+    /// The hash map buffers themselves are stored as child buffers of the record buffer, not as raw pointers in the trigger struct.
+    /// T2 (symmetric hash join): matches were found at insert time; drain the slice's recorded pairs instead
+    /// of iterating the maps. `eager` is a compile-time constant during tracing, so only one path is compiled.
+    if (eager)
+    {
+        performEagerDrainProbe(recordBuffer.getReference(), leftNumberOfHashMaps, rightNumberOfHashMaps, executionCtx, windowStart, windowEnd);
+    }
+    else
+    {
+        performMatchPairsProbe(
+            recordBuffer.getReference(),
+            leftNumberOfHashMaps,
+            rightNumberOfHashMaps,
+            executionCtx,
+            windowStart,
+            windowEnd,
+            rightPageStart,
+            rightPageEnd);
+    }
 }
 }

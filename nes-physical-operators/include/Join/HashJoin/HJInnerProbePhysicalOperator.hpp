@@ -43,7 +43,8 @@ public:
         HashMapOptions leftHashMapBasedOptions,
         HashMapOptions rightHashMapBasedOptions,
         JoinStorageVariant storageVariant = JoinStorageVariant::KEY_GROUPED,
-        JoinStorageVariant rightStorageVariant = JoinStorageVariant::KEY_GROUPED);
+        JoinStorageVariant rightStorageVariant = JoinStorageVariant::KEY_GROUPED,
+        bool eager = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 

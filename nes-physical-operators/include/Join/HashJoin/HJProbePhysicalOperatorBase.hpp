@@ -55,7 +55,8 @@ public:
         HashMapOptions leftHashMapOptions,
         HashMapOptions rightHashMapOptions,
         JoinStorageVariant storageVariant = JoinStorageVariant::KEY_GROUPED,
-        JoinStorageVariant rightStorageVariant = JoinStorageVariant::KEY_GROUPED);
+        JoinStorageVariant rightStorageVariant = JoinStorageVariant::KEY_GROUPED,
+        bool eager = false);
 
 protected:
     /// Pins the hash map TupleBuffer stored as the `index`-th child buffer of the record buffer that `recordBufferRef` points to.
@@ -96,6 +97,19 @@ protected:
     /// One-sided directory: the probe only scans the right side's entries, so the right map may use
     /// inline per-tuple entries (TUPLE_CHAINED) while the left keeps the configured grouped layout.
     JoinStorageVariant rightStorageVariant;
+    /// T2 (symmetric hash join): the matches were already found at insert time; the probe only drains
+    /// the slice's recorded entry pairs.
+    bool eager;
+
+    /// Eager drain: emits one joined record per (left entry, right entry) pair recorded on the slice at
+    /// insert time. Tumbling windows only (slice end == window end); enforced by the lowering.
+    void performEagerDrainProbe(
+        const nautilus::val<TupleBuffer*>& recordBufferRef,
+        nautilus::val<uint64_t> leftNumberOfHashMaps,
+        nautilus::val<uint64_t> rightNumberOfHashMaps,
+        ExecutionContext& executionCtx,
+        const nautilus::val<Timestamp>& windowStart,
+        const nautilus::val<Timestamp>& windowEnd) const;
 
     void performOneSidedMatchPairsProbe(
         const nautilus::val<TupleBuffer*>& recordBufferRef,

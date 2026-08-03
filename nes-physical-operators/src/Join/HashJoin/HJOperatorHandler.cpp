@@ -33,6 +33,7 @@
 #include <Join/StreamJoinUtil.hpp>
 #include <Runtime/TupleBuffer.hpp>
 #include <Sequencing/SequenceData.hpp>
+#include <Time/Timestamp.hpp>
 #include <SliceStore/Slice.hpp>
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
 #include <Util/Logger/Logger.hpp>
@@ -138,6 +139,28 @@ HJOperatorHandler::getCreateNewSlicesFunction(const CreateNewSlicesArguments& ne
             NES_TRACE("Creating new hash-join slice for slice {}-{} for output origin {}", sliceStart, sliceEnd, outputOriginId);
             return {std::make_shared<HJSlice>(*bufferProvider, sliceStart, sliceEnd, copyOfNewHashMapArgs, numberOfHashMaps)};
         });
+}
+
+HJSlice* HJOperatorHandler::sliceForEagerInsert(const Timestamp ts, const WorkerThreadId workerThreadId)
+{
+    auto& cache = eagerInsertCaches[workerThreadId % MAX_CACHED_WORKERS];
+    const auto raw = ts.getRawValue();
+    if (cache.slice != nullptr and cache.start <= raw and raw < cache.end)
+    {
+        return cache.slice;
+    }
+    const auto slices = getSliceAndWindowStore().getSlicesOrCreate(
+        ts,
+        [](SliceStart, SliceEnd) -> std::vector<std::shared_ptr<Slice>>
+        {
+            INVARIANT(false, "HJ eager insert requires the slice to exist (the hash-map extractor creates it first)");
+            return {};
+        });
+    INVARIANT(not slices.empty(), "No slice found for timestamp {}", ts);
+    auto* hjSlice = dynamic_cast<HJSlice*>(slices.front().get());
+    INVARIANT(hjSlice != nullptr, "Slice for timestamp {} is not an HJSlice", ts);
+    cache = {hjSlice->getSliceStart().getRawValue(), hjSlice->getSliceEnd().getRawValue(), hjSlice};
+    return hjSlice;
 }
 
 bool HJOperatorHandler::wasSetupCalled(const JoinBuildSideType& buildSide)

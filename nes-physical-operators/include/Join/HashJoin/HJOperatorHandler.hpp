@@ -14,6 +14,7 @@
 
 #pragma once
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstdint>
 #include <functional>
@@ -29,6 +30,7 @@
 #include <Join/StreamJoinUtil.hpp>
 #include <Runtime/Execution/OperatorHandler.hpp>
 #include <Sequencing/SequenceData.hpp>
+#include <Time/Timestamp.hpp>
 #include <SliceStore/Slice.hpp>
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
 #include <Util/RollingAverage.hpp>
@@ -36,6 +38,7 @@
 
 namespace NES
 {
+class HJSlice;
 
 /// This task models the information for a hash join based window trigger
 struct EmittedHJWindowTrigger
@@ -87,7 +90,22 @@ public:
 
     bool wasSetupCalled(const JoinBuildSideType& buildSide);
 
+    /// Resolves the HJSlice covering `ts` for the eager insert-and-probe of the symmetric hash join, via a
+    /// per-worker one-entry cache (single-writer per entry, lock-free on the hot path; the synchronized store
+    /// lookup only runs on slice change). The slice is guaranteed to exist: the hash-map extractor for the
+    /// same tuple ran first and created it.
+    /// ponytail: fixed 256-worker cache array, mirroring IXJOperatorHandler::sliceForIndexInsert.
+    [[nodiscard]] HJSlice* sliceForEagerInsert(Timestamp ts, WorkerThreadId workerThreadId);
+
 private:
+    struct WorkerSliceCache
+    {
+        uint64_t start = 1; /// empty interval [1, 0) == always miss initially
+        uint64_t end = 0;
+        HJSlice* slice = nullptr;
+    };
+    static constexpr uint64_t MAX_CACHED_WORKERS = 256;
+    std::array<WorkerSliceCache, MAX_CACHED_WORKERS> eagerInsertCaches{};
     /// Is required to not perform the setup again and resolving a race condition to the cleanup state function
     std::atomic<bool> setupAlreadyCalledLeft;
     std::atomic<bool> setupAlreadyCalledRight;

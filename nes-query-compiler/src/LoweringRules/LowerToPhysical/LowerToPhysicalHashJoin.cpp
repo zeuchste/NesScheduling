@@ -201,14 +201,35 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
     /// Unsupported settings degrade to the default with a warning instead of throwing: a throw here executes
     /// during query compilation on the deployed node and stalls the peers of the distributed plan.
     auto storageVariant = conf.joinStorage.getValue();
-    const auto buildVariant = conf.joinBuild.getValue();
-    const auto probeVariant = conf.joinProbe.getValue();
+    auto buildVariant = conf.joinBuild.getValue();
+    auto probeVariant = conf.joinProbe.getValue();
     const auto probeRanges = conf.joinProbeRanges.getValue();
+    /// T2 on the hash join = the classic symmetric hash join: every insert probes the opposite side's
+    /// shared map. The eager probe needs one always-current table per side with unambiguous per-tuple
+    /// entries, so eager forces the shared build (B2), inline tuple entries (S1) on both sides, and a
+    /// single drain task. Tumbling inner joins only; other settings fall back to lazy with a warning.
+    bool eager = false;
     if (conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER)
     {
-        NES_WARNING(
-            "join_trigger=EAGER (T2) is implemented for the index join (join_strategy=INDEX_JOIN) only; "
-            "falling back to LAZY (T1) for the hash join.");
+        if (isOuterJoin(join->getJoinType()))
+        {
+            NES_WARNING("join_trigger=EAGER (T2) supports inner joins only; falling back to LAZY (T1).");
+        }
+        else if (windowType.getSize().getTime() != windowType.getSlide().getTime())
+        {
+            NES_WARNING("join_trigger=EAGER (T2) on the hash join supports tumbling windows only; falling back to LAZY (T1).");
+        }
+        else
+        {
+            eager = true;
+            if (storageVariant != JoinStorageVariant::TUPLE_CHAINED)
+            {
+                NES_WARNING("join_trigger=EAGER (T2) forces join_storage=TUPLE_CHAINED (S1) on the hash join.");
+                storageVariant = JoinStorageVariant::TUPLE_CHAINED;
+            }
+            buildVariant = JoinBuildVariant::SHARED_TABLE;
+            probeVariant = JoinProbeVariant::SINGLE_TASK;
+        }
     }
     if (storageVariant == JoinStorageVariant::TUPLE_CHAINED and isOuterJoin(join->getJoinType()))
     {
@@ -323,7 +344,8 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
         leftHashMapOptions,
         std::move(sliceStoreRefLeft),
         storageVariant,
-        sharedHashMap};
+        sharedHashMap,
+        eager};
     const HJBuildPhysicalOperator rightBuildOperator{
         handlerId,
         JoinBuildSideType::Right,
@@ -332,7 +354,8 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
         rightHashMapOptions,
         std::move(sliceStoreRefRight),
         rightStorageVariant,
-        sharedHashMap};
+        sharedHashMap,
+        eager};
 
     /// Creating the hash join probe — select inner or outer probe based on join type
     auto joinSchema = JoinSchema(newLeftInputSchema, newRightInputSchema, physicalOutputSchema);
@@ -405,7 +428,8 @@ LoweringRuleResultSubgraph LowerToPhysicalHashJoin::apply(LogicalOperator logica
             leftHashMapOptions,
             rightHashMapOptions,
             storageVariant,
-            rightStorageVariant));
+            rightStorageVariant,
+            eager));
     }
 
     std::shared_ptr<PhysicalOperatorWrapper> leftLeaf = leftBuildWrapper;

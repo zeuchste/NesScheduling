@@ -83,6 +83,68 @@ void HJBuildPhysicalOperator::execute(ExecutionContext& ctx, Record& record) con
     /// in the result set. This is the case as an inner join requires all join conditions to be TRUE (i.e., no NULL values in the join fields).
     if (not containsNullInKey)
     {
+        /// T2 (symmetric hash join): {insert own + probe opposite} under the slice's single eager mutex.
+        /// The strict total order makes the pairing exactly-once: an insert pairs with every previously
+        /// completed opposite insert and can never see itself or a concurrent half-finished entry. The
+        /// eager mutex subsumes the per-map shared-insert lock (both maps are only written under it).
+        if (eager)
+        {
+            const auto sliceRef = nautilus::invoke(
+                +[](OperatorHandler* handler, const Timestamp ts, const WorkerThreadId workerThreadId) -> HJSlice*
+                { return dynamic_cast<HJOperatorHandler*>(handler)->sliceForEagerInsert(ts, workerThreadId); },
+                ctx.getGlobalOperatorHandler(operatorHandlerId),
+                timestamp,
+                ctx.workerThreadId);
+            nautilus::invoke(+[](HJSlice* slice) -> void { slice->eagerLock(); }, sliceRef);
+            const auto ownEntry = hashMap.insertEntry(record, *hashMapOptions.hashFunction, ctx.pipelineMemoryProvider.bufferProvider);
+            const auto oppositeBufferRef = nautilus::invoke(
+                +[](HJSlice* slice, const JoinBuildSideType side) -> TupleBuffer*
+                {
+                    const auto opposite = side == JoinBuildSideType::Left ? JoinBuildSideType::Right : JoinBuildSideType::Left;
+                    /// NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): the probe only reads; writes are serialized by the eager mutex
+                    return const_cast<TupleBuffer*>(slice->getHashMapBufferRefForSide(WorkerThreadId(0), opposite));
+                },
+                sliceRef,
+                nautilus::val<JoinBuildSideType>(joinBuildSide));
+            /// Both sides share the key layout, and the probe below touches keys only, so viewing the
+            /// opposite map with this side's field offsets is safe (mirrors forEachMatchingEntry's contract).
+            const ChainedHashMapRef oppositeMap{
+                oppositeBufferRef,
+                hashMapOptions.fieldKeys,
+                hashMapOptions.fieldValues,
+                hashMapOptions.entriesPerPage,
+                hashMapOptions.entrySize};
+            oppositeMap.forEachMatchingEntry(
+                static_cast<nautilus::val<ChainedHashMapEntry*>>(ownEntry),
+                hashMapBuffer.asArg(),
+                [&](const ChainedHashMapRef::ChainedEntryRef& oppositeEntryRef)
+                {
+                    nautilus::invoke(
+                        +[](HJSlice* slice,
+                            ChainedHashMapEntry* ownEntryPtr,
+                            ChainedHashMapEntry* oppositeEntryPtr,
+                            const JoinBuildSideType side) -> void
+                        {
+                            const auto own = reinterpret_cast<uint64_t>(ownEntryPtr);
+                            const auto opp = reinterpret_cast<uint64_t>(oppositeEntryPtr);
+                            if (side == JoinBuildSideType::Left)
+                            {
+                                slice->eagerRecordPair(own, opp);
+                            }
+                            else
+                            {
+                                slice->eagerRecordPair(opp, own);
+                            }
+                        },
+                        sliceRef,
+                        static_cast<nautilus::val<ChainedHashMapEntry*>>(ownEntry),
+                        oppositeEntryRef.entryRef,
+                        nautilus::val<JoinBuildSideType>(joinBuildSide));
+                });
+            nautilus::invoke(+[](HJSlice* slice) -> void { slice->eagerUnlock(); }, sliceRef);
+            return;
+        }
+
         /// P3 (SHARED_TABLE): serialize the whole insert against the other worker threads building into the same map.
         /// storageVariant/sharedHashMap are compile-time constants during tracing, so the non-selected paths and the
         /// lock invocations vanish from the compiled pipelines of the other variants.
@@ -165,11 +227,13 @@ HJBuildPhysicalOperator::HJBuildPhysicalOperator(
     HashMapOptions hashMapOptions,
     std::unique_ptr<SliceStoreRef> sliceStoreRef,
     const JoinStorageVariant storageVariant,
-    const bool sharedHashMap)
+    const bool sharedHashMap,
+    const bool eager)
     : StreamJoinBuildPhysicalOperator{operatorHandlerId, joinBuildSide, std::move(timeFunction), std::move(tupleLayout), std::move(sliceStoreRef)}
     , hashMapOptions(std::move(hashMapOptions))
     , storageVariant(storageVariant)
     , sharedHashMap(sharedHashMap)
+    , eager(eager)
 {
 }
 

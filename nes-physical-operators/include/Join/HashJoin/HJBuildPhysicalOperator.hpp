@@ -43,7 +43,8 @@ public:
         HashMapOptions hashMapOptions,
         std::unique_ptr<SliceStoreRef> sliceStoreRef,
         JoinStorageVariant storageVariant = JoinStorageVariant::KEY_GROUPED,
-        bool sharedHashMap = false);
+        bool sharedHashMap = false,
+        bool eager = false);
     void execute(ExecutionContext& ctx, Record& record) const override;
 
 private:
@@ -53,6 +54,9 @@ private:
     JoinStorageVariant storageVariant;
     /// P3 (SHARED_TABLE): all worker threads insert into one map; inserts are serialized via the map's mutex.
     bool sharedHashMap;
+    /// T2 (symmetric hash join): every insert also probes the opposite side's shared map; matched entry
+    /// pairs are recorded on the slice and drained by the probe at trigger time.
+    bool eager;
 };
 
 }

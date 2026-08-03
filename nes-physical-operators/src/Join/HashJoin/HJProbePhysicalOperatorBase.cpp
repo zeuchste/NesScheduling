@@ -23,6 +23,10 @@
 #include <Interface/NautilusBuffer.hpp>
 #include <Interface/PagedVector/PagedVectorRef.hpp>
 #include <Interface/TimestampRef.hpp>
+#include <Join/HashJoin/HJOperatorHandler.hpp>
+#include <Join/HashJoin/HJSlice.hpp>
+#include <SliceStore/Slice.hpp>
+#include <SliceStore/WindowSlicesStoreInterface.hpp>
 #include <Join/StreamJoinProbePhysicalOperator.hpp>
 #include <Join/StreamJoinUtil.hpp>
 #include <Operators/Windows/WindowMetaData.hpp>
@@ -49,7 +53,7 @@ HJProbePhysicalOperatorBase::HJProbePhysicalOperatorBase(
     std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
     HashMapOptions leftHashMapOptions,
     HashMapOptions rightHashMapOptions,
-    const JoinStorageVariant storageVariant, const JoinStorageVariant rightStorageVariant)
+    const JoinStorageVariant storageVariant, const JoinStorageVariant rightStorageVariant, const bool eager)
     : StreamJoinProbePhysicalOperator(operatorHandlerId, std::move(joinFunction), std::move(windowMetaData), std::move(joinSchema))
     , leftTupleLayout(std::move(leftTupleLayout))
     , rightTupleLayout(std::move(rightTupleLayout))
@@ -57,6 +61,7 @@ HJProbePhysicalOperatorBase::HJProbePhysicalOperatorBase(
     , rightHashMapOptions(std::move(rightHashMapOptions))
     , storageVariant(storageVariant)
     , rightStorageVariant(rightStorageVariant)
+    , eager(eager)
 {
 }
 
@@ -301,6 +306,61 @@ void HJProbePhysicalOperatorBase::performOneSidedMatchPairsProbe(
                 }
             }
         }
+    }
+}
+
+void HJProbePhysicalOperatorBase::performEagerDrainProbe(
+    const nautilus::val<TupleBuffer*>& recordBufferRef,
+    nautilus::val<uint64_t> leftNumberOfHashMaps,
+    nautilus::val<uint64_t> rightNumberOfHashMaps,
+    ExecutionContext& executionCtx,
+    const nautilus::val<Timestamp>& windowStart,
+    const nautilus::val<Timestamp>& windowEnd) const
+{
+    /// With an empty side no pair can have been recorded (inner join), and the child-buffer layout below
+    /// would be ambiguous -- nothing to drain.
+    if (leftNumberOfHashMaps == 0 or rightNumberOfHashMaps == 0)
+    {
+        return;
+    }
+    const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
+    const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
+    /// Eager forces the shared build: exactly one map per side, left at child index 0, right after all left maps.
+    auto leftHashMapBuffer = pinHashMapBuffer(recordBufferRef, nautilus::val<uint64_t>(0));
+    auto rightHashMapBuffer = pinHashMapBuffer(recordBufferRef, leftNumberOfHashMaps);
+    const auto sliceRef = nautilus::invoke(
+        +[](OperatorHandler* handler, const Timestamp windowEndTs) -> HJSlice*
+        {
+            const auto* opHandler = dynamic_cast<HJOperatorHandler*>(handler);
+            const auto slice = opHandler->getSliceAndWindowStore().getSliceBySliceEnd(windowEndTs);
+            INVARIANT(slice.has_value(), "Eager hash join: no slice for window end {}", windowEndTs);
+            auto* hjSlice = dynamic_cast<HJSlice*>(slice.value().get());
+            INVARIANT(hjSlice != nullptr, "Eager hash join: slice for window end {} is not an HJSlice", windowEndTs);
+            return hjSlice;
+        },
+        executionCtx.getGlobalOperatorHandler(operatorHandlerId),
+        windowEnd);
+    const auto pairCount = nautilus::invoke(+[](const HJSlice* slice) -> uint64_t { return slice->eagerPairCount(); }, sliceRef);
+    for (nautilus::val<uint64_t> pair = 0; pair < pairCount; ++pair)
+    {
+        const auto leftEntry = nautilus::invoke(
+            +[](const HJSlice* slice, const uint64_t idx) -> ChainedHashMapEntry*
+            { return reinterpret_cast<ChainedHashMapEntry*>(slice->eagerPairLeft(idx)); },
+            sliceRef,
+            pair);
+        const auto rightEntry = nautilus::invoke(
+            +[](const HJSlice* slice, const uint64_t idx) -> ChainedHashMapEntry*
+            { return reinterpret_cast<ChainedHashMapEntry*>(slice->eagerPairRight(idx)); },
+            sliceRef,
+            pair);
+        const ChainedHashMapRef::ChainedEntryRef leftEntryRef{
+            leftEntry, leftHashMapBuffer.asArg(), leftHashMapOptions.fieldKeys, leftHashMapOptions.fieldValues};
+        const ChainedHashMapRef::ChainedEntryRef rightEntryRef{
+            rightEntry, rightHashMapBuffer.asArg(), rightHashMapOptions.fieldKeys, rightHashMapOptions.fieldValues};
+        const auto leftRecord = reconstructRecordFromEntry(leftEntryRef, leftHashMapOptions);
+        const auto rightRecord = reconstructRecordFromEntry(rightEntryRef, rightHashMapOptions);
+        auto joinedRecord = createJoinedRecord(leftRecord, rightRecord, windowStart, windowEnd, leftFields, rightFields);
+        executeChild(executionCtx, joinedRecord);
     }
 }
 
