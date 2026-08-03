@@ -71,7 +71,8 @@ public:
         bool perSliceRuns = false,
         bool bloomFilter = false,
         bool pickSmaller = false,
-        bool adaptiveStats = true);
+        bool adaptiveStats = true,
+        bool eagerRhj = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -104,6 +105,16 @@ private:
     bool pickSmaller;
     /// join_statistics=ADAPTIVE: exploit the free distinct-key count (table/filter sizing, side choice).
     bool adaptiveStats;
+    /// Eager RunHashJoin ("per-run trigger"): seal-time pairs plus tail completion, drained at trigger.
+    bool eagerRhj;
+
+    void performEagerRhjDrain(
+        const PagedVectorRef& leftPagedVector,
+        const PagedVectorRef& rightPagedVector,
+        ExecutionContext& executionCtx,
+        const nautilus::val<Timestamp>& windowStart,
+        const nautilus::val<Timestamp>& windowEnd,
+        const nautilus::val<SliceEnd>& sliceIdLeft) const;
 
     void performPerSliceJoin(
         const PagedVectorRef& leftPagedVector,

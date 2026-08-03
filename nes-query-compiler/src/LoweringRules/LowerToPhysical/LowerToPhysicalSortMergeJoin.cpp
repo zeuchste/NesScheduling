@@ -16,6 +16,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <unordered_map>
 #include <utility>
@@ -48,6 +49,7 @@
 #include <Traits/MemoryLayoutTypeTrait.hpp>
 #include <Traits/OutputOriginIdsTrait.hpp>
 #include <Traits/TraitSet.hpp>
+#include <Util/Logger/Logger.hpp>
 #include <Util/SchemaFactory.hpp>
 #include <Watermark/TimeFunction.hpp>
 #include <WindowTypes/Measures/TimeCharacteristic.hpp>
@@ -98,6 +100,14 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
         and kernel != SMJKernel::ADAPTIVE;
     const bool bloomFilter = conf.joinPrefilter.getValue() == JoinPrefilter::BLOOM;
     const bool adaptiveStats = conf.joinStatistics.getValue() == JoinStatistics::ADAPTIVE;
+    /// Eager RunHashJoin ("per-run trigger"): runs are built and probed during ingestion; tumbling only.
+    const bool eagerRhj = conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER and kernel == SMJKernel::RUN_HASH
+        and join->getWindowType().getSize().getTime() == join->getWindowType().getSlide().getTime();
+    if (conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER and not eagerRhj)
+    {
+        NES_WARNING("join_trigger=EAGER on the sort-merge family is implemented for RUN_HASH_JOIN on tumbling "
+                    "windows only; falling back to LAZY (T1).");
+    }
     auto outputOriginIds = traitSet.get<OutputOriginIdsTrait>();
     const auto memoryLayoutType = traitSet.get<MemoryLayoutTypeTrait>()->memoryLayout;
     PRECONDITION(std::ranges::size(*outputOriginIds) == 1, "Expected one output origin id");
@@ -187,10 +197,32 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             : 1);
 
     const auto handlerId = getNextOperatorHandlerId();
+    /// Eager RunHashJoin: the build hashes the (casted) key fields into the slice's shared runs.
+    std::optional<NLJEagerBuild> leftEagerBuild;
+    std::optional<NLJEagerBuild> rightEagerBuild;
+    if (eagerRhj)
+    {
+        leftEagerBuild = NLJEagerBuild{
+            .mode = NLJEagerBuild::Mode::RHJ_RUNS, .keyFieldNames = leftKeyFieldNames, .hashFunction = std::make_shared<MurMur3HashFunction>()};
+        rightEagerBuild = NLJEagerBuild{
+            .mode = NLJEagerBuild::Mode::RHJ_RUNS,
+            .keyFieldNames = rightKeyFieldNames,
+            .hashFunction = std::make_shared<MurMur3HashFunction>()};
+    }
     const NLJBuildPhysicalOperator leftBuildOperator{
-        handlerId, JoinBuildSideType::Left, TimeFunction::create(timeStampFieldLeft), leftTupleLayout, std::move(sliceStoreRefLeft)};
+        handlerId,
+        JoinBuildSideType::Left,
+        TimeFunction::create(timeStampFieldLeft),
+        leftTupleLayout,
+        std::move(sliceStoreRefLeft),
+        leftEagerBuild};
     const NLJBuildPhysicalOperator rightBuildOperator{
-        handlerId, JoinBuildSideType::Right, TimeFunction::create(timeStampFieldRight), rightTupleLayout, std::move(sliceStoreRefRight)};
+        handlerId,
+        JoinBuildSideType::Right,
+        TimeFunction::create(timeStampFieldRight),
+        rightTupleLayout,
+        std::move(sliceStoreRefRight),
+        rightEagerBuild};
 
     auto joinSchema = JoinSchema(newLeftInputSchema, newRightInputSchema, physicalOutputSchema);
 
@@ -232,7 +264,8 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
             perSliceRuns,
             bloomFilter,
             pickSmaller,
-            adaptiveStats),
+            adaptiveStats,
+            eagerRhj),
         physicalOutputSchema,
         physicalOutputSchema,
         memoryLayoutType,

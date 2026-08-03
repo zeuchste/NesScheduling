@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <string>
@@ -191,10 +192,48 @@ LoweringRuleResultSubgraph LowerToPhysicalNLJoin::apply(LogicalOperator logicalO
     auto handler
         = std::make_shared<NLJOperatorHandler>(inputOriginIds, outputOriginId, std::move(sliceAndWindowStore), createTriggerStrategy());
 
+    /// Eager trigger (T2), handshake/SplitJoin-style: every insert scans the opposite side under the
+    /// slice lock and stores predicate-verified pairs; the trigger only drains. Inner tumbling only.
+    const bool eagerNlj = conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER
+        and currentJoinType == JoinLogicalOperator::JoinType::INNER_JOIN
+        and windowType.getSize().getTime() == windowType.getSlide().getTime();
+    if (conf.joinTrigger.getValue() == JoinTriggerVariant::EAGER and not eagerNlj)
+    {
+        NES_WARNING("join_trigger=EAGER on the NestedLoopJoin is implemented for inner joins on tumbling "
+                    "windows only; falling back to LAZY (T1).");
+    }
+    std::optional<NLJEagerBuild> leftEagerBuild;
+    std::optional<NLJEagerBuild> rightEagerBuild;
+    if (eagerNlj)
+    {
+        leftEagerBuild = NLJEagerBuild{
+            .mode = NLJEagerBuild::Mode::NLJ_SCAN,
+            .joinFunction = joinFunction,
+            .otherTupleLayout = rightTupleLayout,
+            .ownKeyFieldNames = {leftKeyFieldNames.begin(), leftKeyFieldNames.end()},
+            .otherKeyFieldNames = {rightKeyFieldNames.begin(), rightKeyFieldNames.end()}};
+        rightEagerBuild = NLJEagerBuild{
+            .mode = NLJEagerBuild::Mode::NLJ_SCAN,
+            .joinFunction = joinFunction,
+            .otherTupleLayout = leftTupleLayout,
+            .ownKeyFieldNames = {rightKeyFieldNames.begin(), rightKeyFieldNames.end()},
+            .otherKeyFieldNames = {leftKeyFieldNames.begin(), leftKeyFieldNames.end()}};
+    }
+
     const NLJBuildPhysicalOperator leftBuildOperator{
-        handlerId, JoinBuildSideType::Left, TimeFunction::create(timeStampFieldLeft), leftTupleLayout, std::move(sliceStoreRefLeft)};
+        handlerId,
+        JoinBuildSideType::Left,
+        TimeFunction::create(timeStampFieldLeft),
+        leftTupleLayout,
+        std::move(sliceStoreRefLeft),
+        leftEagerBuild};
     const NLJBuildPhysicalOperator rightBuildOperator{
-        handlerId, JoinBuildSideType::Right, TimeFunction::create(timeStampFieldRight), rightTupleLayout, std::move(sliceStoreRefRight)};
+        handlerId,
+        JoinBuildSideType::Right,
+        TimeFunction::create(timeStampFieldRight),
+        rightTupleLayout,
+        std::move(sliceStoreRefRight),
+        rightEagerBuild};
 
     auto joinSchema = JoinSchema(leftInputSchema, rightInputSchema, outputSchema);
 
@@ -263,7 +302,8 @@ LoweringRuleResultSubgraph LowerToPhysicalNLJoin::apply(LogicalOperator logicalO
             leftTupleLayout,
             rightTupleLayout,
             leftKeyFieldNames,
-            rightKeyFieldNames));
+            rightKeyFieldNames,
+            eagerNlj));
     }
 
     return {.root = {probeWrapper}, .leaves = {leftBuildWrapper, rightBuildWrapper}};

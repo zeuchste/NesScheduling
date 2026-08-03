@@ -40,6 +40,7 @@ NLJSlice::NLJSlice(
     const uint64_t tupleSizeLeft,
     const uint64_t tupleSizeRight)
     : Slice(sliceStart, sliceEnd)
+    , numWorkers(numberOfWorkerThreads)
 {
     const uint64_t pvMainBufferSize = PagedVector::getMainBufferSize();
     const uint64_t pvPageBufferSize = bufferProvider.getBufferSize();
@@ -129,6 +130,22 @@ void NLJSlice::combinePagedVectors()
     /// To ensure correctness, we use a lock here
     const std::scoped_lock lock(combinePagedVectorsMutex);
 
+    /// Record the per-worker prefix offsets before moving any pages: the packed (worker, position)
+    /// references of the eager paths translate through these into combined-vector positions.
+    if (combinedOffsets[0].empty())
+    {
+        for (int side = 0; side < 2; ++side)
+        {
+            const auto& buffers = side == 0 ? leftPagedVectorBuffers : rightPagedVectorBuffers;
+            uint64_t offset = 0;
+            for (const auto& buf : buffers)
+            {
+                combinedOffsets[side].push_back(offset);
+                offset += PagedVector::load(buf).getTotalNumberOfRecords();
+            }
+        }
+    }
+
     /// Append all PagedVectors on the left join side and erase all items except for the first one
     /// We do this to ensure that we have only one PagedVector for each side during the probing phase
     if (leftPagedVectorBuffers.size() > 1)
@@ -183,6 +200,164 @@ void NLJSlice::waitSortedRunReady(const uint64_t side) const
 const std::vector<std::pair<uint64_t, uint64_t>>& NLJSlice::getSortedRun(const uint64_t side) const
 {
     return sortedRuns[side];
+}
+
+uint64_t NLJSlice::combinedPosition(const uint64_t side, const uint64_t packed) const
+{
+    return combinedOffsets[side][packed >> EAGER_WORKER_SHIFT] + (packed & EAGER_POS_MASK);
+}
+
+void NLJSlice::lockEager()
+{
+    eagerMutex.lock();
+}
+
+void NLJSlice::unlockEager()
+{
+    eagerMutex.unlock();
+}
+
+void NLJSlice::appendEagerPair(const uint64_t workerIdx, const uint64_t leftPacked, const uint64_t rightPacked)
+{
+    std::call_once(eagerPairsOnce, [this] { eagerPairs.resize(numWorkers); });
+    eagerPairs[workerIdx].push_back({leftPacked, rightPacked});
+}
+
+void NLJSlice::appendEagerOriented(
+    const WorkerThreadId workerThreadId,
+    const uint64_t ownSide,
+    const uint64_t ownPosition,
+    const uint64_t oppWorker,
+    const uint64_t oppPosition)
+{
+    const auto w = static_cast<uint64_t>(workerThreadId % numWorkers);
+    const auto ownPacked = (w << EAGER_WORKER_SHIFT) | ownPosition;
+    const auto oppPacked = (oppWorker << EAGER_WORKER_SHIFT) | oppPosition;
+    if (ownSide == 0)
+    {
+        appendEagerPair(w, ownPacked, oppPacked);
+    }
+    else
+    {
+        appendEagerPair(w, oppPacked, ownPacked);
+    }
+}
+
+uint64_t NLJSlice::eagerPairFlattenCount()
+{
+    const std::scoped_lock lock(eagerMutex);
+    if (not eagerFlattened)
+    {
+        for (const auto& list : eagerPairs)
+        {
+            for (const auto& [l, r] : list)
+            {
+                eagerPairsFlat.push_back({combinedPosition(0, l), combinedPosition(1, r)});
+            }
+        }
+        eagerFlattened = true;
+    }
+    return eagerPairsFlat.size();
+}
+
+namespace
+{
+constexpr uint64_t EAGER_RUN_SIZE = 65536;
+
+/// Merge-scan two hash-sorted (hash, packedPos) runs; calls emit(entryOfA, entryOfB) per hash match.
+template <typename Emit>
+void mergeByHash(
+    const std::vector<std::pair<uint64_t, uint64_t>>& a, const std::vector<std::pair<uint64_t, uint64_t>>& b, Emit emit)
+{
+    size_t i = 0;
+    size_t j = 0;
+    while (i < a.size() and j < b.size())
+    {
+        if (a[i].first < b[j].first)
+        {
+            ++i;
+        }
+        else if (b[j].first < a[i].first)
+        {
+            ++j;
+        }
+        else
+        {
+            const auto hash = a[i].first;
+            const size_t i0 = i;
+            const size_t j0 = j;
+            while (i < a.size() and a[i].first == hash)
+            {
+                ++i;
+            }
+            while (j < b.size() and b[j].first == hash)
+            {
+                ++j;
+            }
+            for (size_t x = i0; x < i; ++x)
+            {
+                for (size_t y = j0; y < j; ++y)
+                {
+                    emit(a[x].second, b[y].second);
+                }
+            }
+        }
+    }
+}
+}
+
+void NLJSlice::eagerRunInsert(const uint64_t side, const uint64_t hash, const uint64_t position, const WorkerThreadId workerThreadId)
+{
+    std::call_once(eagerRunsOnce, [this] { eagerRuns = std::make_unique<EagerRuns>(); });
+    auto& runs = *eagerRuns;
+    const auto w = static_cast<uint64_t>(workerThreadId % numWorkers);
+    const auto packed = (w << EAGER_WORKER_SHIFT) | position;
+    std::vector<std::pair<uint64_t, uint64_t>> full;
+    {
+        const std::scoped_lock lock(runs.sideMutex[side]);
+        runs.open[side].emplace_back(hash, packed);
+        if (runs.open[side].size() >= EAGER_RUN_SIZE)
+        {
+            full.swap(runs.open[side]);
+        }
+    }
+    if (full.empty())
+    {
+        return;
+    }
+    /// Seal: sequence draw and publication are one critical section, so a snapshot that misses a run
+    /// implies that run carries a larger sequence and will probe this one instead (exactly-once).
+    std::ranges::sort(full);
+    auto run = std::make_shared<EagerRunSealed>();
+    run->entries = std::move(full);
+    std::vector<std::shared_ptr<EagerRunSealed>> opposite;
+    {
+        const std::scoped_lock lock(runs.sealMutex);
+        run->seq = ++runs.sealSeq;
+        runs.sealed[side].push_back(run);
+        opposite = runs.sealed[1 - side];
+    }
+    for (const auto& opp : opposite)
+    {
+        if (opp->seq >= run->seq)
+        {
+            continue;
+        }
+        mergeByHash(
+            run->entries,
+            opp->entries,
+            [&](const uint64_t mine, const uint64_t theirs)
+            {
+                if (side == 0)
+                {
+                    appendEagerPair(w, mine, theirs);
+                }
+                else
+                {
+                    appendEagerPair(w, theirs, mine);
+                }
+            });
+    }
 }
 
 }

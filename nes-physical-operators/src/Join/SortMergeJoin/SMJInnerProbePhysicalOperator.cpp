@@ -679,6 +679,78 @@ uint64_t rmjSortAndMerge(SMJSortState* state)
 
 /// join_state_scope=PER_SLICE proxies: claim/append/seal/wait on the slice-owned sorted runs, then merge
 /// the left run of the left slice with the right run of the right slice into a task-local pair list.
+/// Merge-scan two hash-sorted (hash, packedPos) runs; calls emit(leftPacked, rightPacked) per match.
+template <typename Emit>
+void eagerMergeByHash(
+    const std::vector<std::pair<uint64_t, uint64_t>>& left, const std::vector<std::pair<uint64_t, uint64_t>>& right, Emit emit)
+{
+    size_t i = 0;
+    size_t j = 0;
+    while (i < left.size() and j < right.size())
+    {
+        if (left[i].first < right[j].first)
+        {
+            ++i;
+        }
+        else if (right[j].first < left[i].first)
+        {
+            ++j;
+        }
+        else
+        {
+            const auto hash = left[i].first;
+            const size_t i0 = i;
+            const size_t j0 = j;
+            while (i < left.size() and left[i].first == hash)
+            {
+                ++i;
+            }
+            while (j < right.size() and right[j].first == hash)
+            {
+                ++j;
+            }
+            for (size_t x = i0; x < i; ++x)
+            {
+                for (size_t y = j0; y < j; ++y)
+                {
+                    emit(left[x].second, right[y].second);
+                }
+            }
+        }
+    }
+}
+
+/// Eager RunHashJoin, trigger-time collection: translate the seal-time pairs into combined-vector
+/// positions and complete the combinations no seal probed -- the unsealed tails against everything.
+/// Sealed x sealed was covered at seal time (the later-sealing run probes all earlier ones).
+uint64_t eagerRhjCollect(SMJSortState* state, NLJSlice* slice)
+{
+    const auto sealTimePairs = slice->eagerPairFlattenCount();
+    for (uint64_t i = 0; i < sealTimePairs; ++i)
+    {
+        state->candidatePairs.emplace_back(slice->eagerPairLeftAt(i), slice->eagerPairRightAt(i));
+    }
+    if (const auto* runs = slice->getEagerRuns())
+    {
+        const auto emit = [&](const uint64_t leftPacked, const uint64_t rightPacked)
+        { state->candidatePairs.emplace_back(slice->combinedPosition(0, leftPacked), slice->combinedPosition(1, rightPacked)); };
+        auto openLeft = runs->open[0];
+        auto openRight = runs->open[1];
+        std::ranges::sort(openLeft);
+        std::ranges::sort(openRight);
+        eagerMergeByHash(openLeft, openRight, emit);
+        for (const auto& run : runs->sealed[1])
+        {
+            eagerMergeByHash(openLeft, run->entries, emit);
+        }
+        for (const auto& run : runs->sealed[0])
+        {
+            eagerMergeByHash(run->entries, openRight, emit);
+        }
+    }
+    return state->candidatePairs.size();
+}
+
 /// ADAPTIVE kernel: the per-trigger policy. The duplication crossover of the evaluation (tuples per key
 /// ~40-60) is runtime-observable from the free distinct-key estimate, so the kernel is chosen per window:
 /// below the boundary, comparison sort (no bucket memory, best at low duplication); at or above it, O(n)
@@ -756,7 +828,8 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     const bool perSliceRuns,
     const bool bloomFilter,
     const bool pickSmaller,
-    const bool adaptiveStats)
+    const bool adaptiveStats,
+    const bool eagerRhj)
     : NLJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -773,6 +846,7 @@ SMJInnerProbePhysicalOperator::SMJInnerProbePhysicalOperator(
     , bloomFilter(bloomFilter)
     , pickSmaller(pickSmaller)
     , adaptiveStats(adaptiveStats)
+    , eagerRhj(eagerRhj)
 {
 }
 
@@ -800,6 +874,11 @@ void SMJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordB
     const PagedVectorRef leftPagedVector(BorrowedNautilusBuffer::from(leftPagedVectorRef), leftTupleLayout);
     const PagedVectorRef rightPagedVector(BorrowedNautilusBuffer::from(rightPagedVectorRef), rightTupleLayout);
 
+    if (eagerRhj)
+    {
+        performEagerRhjDrain(leftPagedVector, rightPagedVector, executionCtx, windowStart, windowEnd, sliceIdLeft);
+        return;
+    }
     if (perSliceRuns)
     {
         performPerSliceJoin(leftPagedVector, rightPagedVector, executionCtx, windowStart, windowEnd, sliceIdLeft, sliceIdRight);
@@ -1051,6 +1130,36 @@ void SMJInnerProbePhysicalOperator::performSortMergeJoin(
         }
     }
 
+    nautilus::invoke(smjFreeState, state);
+}
+
+/// Eager RunHashJoin ("per-run trigger"): all join work happened at seal time or happens in one
+/// C++ collection call here; the nautilus side only walks the resulting candidate pairs. Tumbling
+/// windows only (the lowering falls back to lazy for sliding), so window == slice.
+void SMJInnerProbePhysicalOperator::performEagerRhjDrain(
+    const PagedVectorRef& leftPagedVector,
+    const PagedVectorRef& rightPagedVector,
+    ExecutionContext& executionCtx,
+    const nautilus::val<Timestamp>& windowStart,
+    const nautilus::val<Timestamp>& windowEnd,
+    const nautilus::val<SliceEnd>& sliceIdLeft) const
+{
+    const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
+    const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
+    const auto handlerRef = executionCtx.getGlobalOperatorHandler(operatorHandlerId);
+    const auto sliceRef = nautilus::invoke(smjSliceFromEnd, handlerRef, sliceIdLeft);
+    const auto state = nautilus::invoke(smjCreateState);
+    const auto numberOfCandidatePairs = nautilus::invoke(eagerRhjCollect, state, sliceRef);
+    for (nautilus::val<uint64_t> pair = 0; pair < numberOfCandidatePairs; ++pair)
+    {
+        const auto leftRecord = leftPagedVector.at(nautilus::invoke(smjPairLeft, state, pair));
+        const auto rightRecord = rightPagedVector.at(nautilus::invoke(smjPairRight, state, pair));
+        auto joinedRecord = createJoinedRecord(leftRecord, rightRecord, windowStart, windowEnd, leftFields, rightFields);
+        if (joinFunction.execute(joinedRecord, executionCtx.pipelineMemoryProvider.arena))
+        {
+            executeChild(executionCtx, joinedRecord);
+        }
+    }
     nautilus::invoke(smjFreeState, state);
 }
 

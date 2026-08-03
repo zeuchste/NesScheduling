@@ -42,7 +42,8 @@ public:
         std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout,
         std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
         std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
-        std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames);
+        std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
+        bool eager = false);
 
     void open(ExecutionContext& executionCtx, RecordBuffer& recordBuffer) const override;
 
@@ -50,5 +51,9 @@ public:
     {
         return joinType == JoinLogicalOperator::JoinType::INNER_JOIN || joinType == JoinLogicalOperator::JoinType::CARTESIAN_PRODUCT;
     }
+
+private:
+    /// Eager trigger (T2): drain the pairs found (and predicate-verified) at insert time.
+    bool eager;
 };
 }

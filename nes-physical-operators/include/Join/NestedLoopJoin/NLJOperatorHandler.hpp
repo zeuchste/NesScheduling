@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -80,7 +81,21 @@ public:
     [[nodiscard]] std::function<std::vector<std::shared_ptr<Slice>>(SliceStart, SliceEnd)>
     getCreateNewSlicesFunction(const CreateNewSlicesArguments&) const override;
 
+    /// Resolves the NLJSlice covering `ts` for the eager insert paths, via a per-worker one-entry cache
+    /// (single-writer per entry; the store lookup only runs on slice change). The slice exists: the
+    /// vector extractor for the same tuple ran first and created it.
+    [[nodiscard]] class NLJSlice* sliceForEagerInsert(Timestamp ts, WorkerThreadId workerThreadId);
+
 private:
+    struct WorkerSliceCache
+    {
+        uint64_t start = 1; /// empty interval [1, 0) == always miss initially
+        uint64_t end = 0;
+        NLJSlice* slice = nullptr;
+    };
+    static constexpr uint64_t MAX_CACHED_WORKERS = 256;
+    std::array<WorkerSliceCache, MAX_CACHED_WORKERS> eagerInsertCaches{};
+
     void createProbeTasks(
         const ProbeWorkItem& workItem,
         const WindowInfo& windowInfo,

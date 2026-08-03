@@ -38,11 +38,24 @@
 #include <SliceStore/WindowSlicesStoreInterface.hpp>
 #include <Time/Timestamp.hpp>
 #include <ExecutionContext.hpp>
+#include <function.hpp>
 #include <val.hpp>
 #include <val_ptr.hpp>
 
 namespace NES
 {
+
+namespace
+{
+NLJSlice* nljEagerSliceFromEnd(OperatorHandler* ptrOpHandler, const SliceEnd sliceEnd)
+{
+    PRECONDITION(ptrOpHandler != nullptr, "op handler context should not be null");
+    const auto* opHandler = dynamic_cast<NLJOperatorHandler*>(ptrOpHandler);
+    auto slice = opHandler->getSliceAndWindowStore().getSliceBySliceEnd(sliceEnd);
+    INVARIANT(slice.has_value(), "Could not find a slice for slice end {}", sliceEnd);
+    return dynamic_cast<NLJSlice*>(slice.value().get());
+}
+}
 
 NLJInnerProbePhysicalOperator::NLJInnerProbePhysicalOperator(
     OperatorHandlerId operatorHandlerId,
@@ -52,7 +65,8 @@ NLJInnerProbePhysicalOperator::NLJInnerProbePhysicalOperator(
     std::shared_ptr<PagedVectorTupleLayout> leftTupleLayout,
     std::shared_ptr<PagedVectorTupleLayout> rightTupleLayout,
     std::vector<Record::RecordFieldIdentifier> leftKeyFieldNames,
-    std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames)
+    std::vector<Record::RecordFieldIdentifier> rightKeyFieldNames,
+    const bool eager)
     : NLJProbePhysicalOperatorBase(
           operatorHandlerId,
           std::move(joinFunction),
@@ -62,6 +76,7 @@ NLJInnerProbePhysicalOperator::NLJInnerProbePhysicalOperator(
           std::move(rightTupleLayout),
           std::move(leftKeyFieldNames),
           std::move(rightKeyFieldNames))
+    , eager(eager)
 {
 }
 
@@ -87,6 +102,29 @@ void NLJInnerProbePhysicalOperator::open(ExecutionContext& executionCtx, RecordB
 
     const PagedVectorRef leftPagedVector(BorrowedNautilusBuffer::from(leftPagedVectorRef), leftTupleLayout);
     const PagedVectorRef rightPagedVector(BorrowedNautilusBuffer::from(rightPagedVectorRef), rightTupleLayout);
+    if (eager)
+    {
+        /// Eager trigger (T2): every pair was found and predicate-verified at insert time; the trigger
+        /// only drains them. Tumbling windows only (the lowering falls back to lazy for sliding), so the
+        /// left and right slice are the same slice and pairs cover the whole window.
+        const auto leftFields = getOrderedFieldNames(leftTupleLayout->getSchema());
+        const auto rightFields = getOrderedFieldNames(rightTupleLayout->getSchema());
+        const auto sliceRef = invoke(nljEagerSliceFromEnd, operatorHandlerMemRef, sliceIdLeft);
+        const auto pairCount = invoke(+[](NLJSlice* slice) -> uint64_t { return slice->eagerPairFlattenCount(); }, sliceRef);
+        for (nautilus::val<uint64_t> i = 0; i < pairCount; ++i)
+        {
+            const auto leftPosition
+                = invoke(+[](const NLJSlice* slice, const uint64_t idx) -> uint64_t { return slice->eagerPairLeftAt(idx); }, sliceRef, i);
+            const auto rightPosition
+                = invoke(+[](const NLJSlice* slice, const uint64_t idx) -> uint64_t { return slice->eagerPairRightAt(idx); }, sliceRef, i);
+            const auto leftRecord = leftPagedVector.at(leftPosition);
+            const auto rightRecord = rightPagedVector.at(rightPosition);
+            auto joinedRecord = createJoinedRecord(leftRecord, rightRecord, windowStart, windowEnd, leftFields, rightFields);
+            executeChild(executionCtx, joinedRecord);
+        }
+        return;
+    }
+
     const auto numberOfTuplesLeft = leftPagedVector.getNumberOfRecords();
     const auto numberOfTuplesRight = rightPagedVector.getNumberOfRecords();
 

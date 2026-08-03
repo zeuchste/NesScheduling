@@ -47,6 +47,28 @@ NLJOperatorHandler::NLJOperatorHandler(
 {
 }
 
+NLJSlice* NLJOperatorHandler::sliceForEagerInsert(const Timestamp ts, const WorkerThreadId workerThreadId)
+{
+    auto& cache = eagerInsertCaches[workerThreadId % MAX_CACHED_WORKERS];
+    const auto raw = ts.getRawValue();
+    if (cache.slice != nullptr and cache.start <= raw and raw < cache.end)
+    {
+        return cache.slice;
+    }
+    const auto slices = getSliceAndWindowStore().getSlicesOrCreate(
+        ts,
+        [](SliceStart, SliceEnd) -> std::vector<std::shared_ptr<Slice>>
+        {
+            INVARIANT(false, "The eager insert requires the slice to exist (the vector extractor creates it first)");
+            return {};
+        });
+    INVARIANT(not slices.empty(), "No slice found for timestamp {}", ts);
+    auto* nljSlice = dynamic_cast<NLJSlice*>(slices.front().get());
+    INVARIANT(nljSlice != nullptr, "Slice for timestamp {} is not an NLJSlice", ts);
+    cache = {nljSlice->getSliceStart().getRawValue(), nljSlice->getSliceEnd().getRawValue(), nljSlice};
+    return nljSlice;
+}
+
 std::function<std::vector<std::shared_ptr<Slice>>(SliceStart, SliceEnd)>
 NLJOperatorHandler::getCreateNewSlicesFunction(const CreateNewSlicesArguments& args) const
 {
