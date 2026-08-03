@@ -203,9 +203,19 @@ LoweringRuleResultSubgraph LowerToPhysicalSortMergeJoin::apply(LogicalOperator l
     if (eagerRhj)
     {
         leftEagerBuild = NLJEagerBuild{
-            .mode = NLJEagerBuild::Mode::RHJ_RUNS, .keyFieldNames = leftKeyFieldNames, .hashFunction = std::make_shared<MurMur3HashFunction>()};
+            .mode = NLJEagerBuild::Mode::RHJ_RUNS,
+            .joinFunction = std::nullopt,
+            .otherTupleLayout = nullptr,
+            .ownKeyFieldNames = {},
+            .otherKeyFieldNames = {},
+            .keyFieldNames = leftKeyFieldNames,
+            .hashFunction = std::make_shared<MurMur3HashFunction>()};
         rightEagerBuild = NLJEagerBuild{
             .mode = NLJEagerBuild::Mode::RHJ_RUNS,
+            .joinFunction = std::nullopt,
+            .otherTupleLayout = nullptr,
+            .ownKeyFieldNames = {},
+            .otherKeyFieldNames = {},
             .keyFieldNames = rightKeyFieldNames,
             .hashFunction = std::make_shared<MurMur3HashFunction>()};
     }

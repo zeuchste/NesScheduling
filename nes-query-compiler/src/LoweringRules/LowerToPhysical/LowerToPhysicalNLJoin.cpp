@@ -211,13 +211,17 @@ LoweringRuleResultSubgraph LowerToPhysicalNLJoin::apply(LogicalOperator logicalO
             .joinFunction = joinFunction,
             .otherTupleLayout = rightTupleLayout,
             .ownKeyFieldNames = {leftKeyFieldNames.begin(), leftKeyFieldNames.end()},
-            .otherKeyFieldNames = {rightKeyFieldNames.begin(), rightKeyFieldNames.end()}};
+            .otherKeyFieldNames = {rightKeyFieldNames.begin(), rightKeyFieldNames.end()},
+            .keyFieldNames = {},
+            .hashFunction = nullptr};
         rightEagerBuild = NLJEagerBuild{
             .mode = NLJEagerBuild::Mode::NLJ_SCAN,
             .joinFunction = joinFunction,
             .otherTupleLayout = leftTupleLayout,
             .ownKeyFieldNames = {rightKeyFieldNames.begin(), rightKeyFieldNames.end()},
-            .otherKeyFieldNames = {leftKeyFieldNames.begin(), leftKeyFieldNames.end()}};
+            .otherKeyFieldNames = {leftKeyFieldNames.begin(), leftKeyFieldNames.end()},
+            .keyFieldNames = {},
+            .hashFunction = nullptr};
     }
 
     const NLJBuildPhysicalOperator leftBuildOperator{
