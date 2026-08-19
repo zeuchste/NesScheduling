@@ -28,6 +28,8 @@
 #include <Configuration/WorkerConfiguration.hpp>
 #include <Identifiers/Identifiers.hpp>
 #include <Listeners/QueryLog.hpp>
+#include <Runtime/Allocator/ComposeFixedMemoryResource.hpp>
+#include <Runtime/Allocator/VmCacheMemoryResource.hpp>
 #include <Runtime/BufferManager.hpp>
 #include <Runtime/NodeEngine.hpp>
 #include <Runtime/Spill/SpillManager.hpp>
@@ -133,6 +135,13 @@ std::optional<SizeClassConfig> NodeEngineBuilder::makeSizeClassConfig(const Work
     config.policy = workerConfiguration.bufferSizeClassProvisioning.getValue();
     config.totalBudgetBytes = workerConfiguration.bufferSizeClassBudgetBytes.getValue();
     config.buffersPerClass = workerConfiguration.bufferSizeClassBuffersPerClass.getValue();
+    /// For LazyElastic, buffer_size_class_buffers_per_class (when set) also raises the per-class *growth
+    /// ceiling*, so a large-state query can grow its hot classes on demand instead of hitting the default
+    /// 4096-buffer cap. Lazy, so a high ceiling only faults in what is actually used.
+    if (config.policy == BufferProvisioningPolicy::LazyElastic && config.buffersPerClass > 0)
+    {
+        config.maxBuffersPerClass = config.buffersPerClass;
+    }
     return config;
 }
 
@@ -145,13 +154,40 @@ std::unique_ptr<NodeEngine> NodeEngineBuilder::build(const Host& host)
     /// configs (e.g. tiny-pool.yaml for buffer-exhaustion tests) can pin an exact count; otherwise use the
     /// total-memory-budget-derived count from resolveMemoryBudgets.
     const auto explicitBufferCount = static_cast<uint32_t>(workerConfiguration.numberOfBuffersInGlobalBufferManager.getValue());
+
+    /// Select the allocator for variable-sized requests (A1/A2/A3). ComposeFixed and VmCache back the
+    /// unpooled path with a large mmap arena and force size classes off, so the variable-sized state that
+    /// A1 would pool instead flows through the compose/vmcache arena; they get a generous unpooled budget so
+    /// the allocator, not the #1702 cap, is what is exercised.
+    static constexpr size_t VARIABLE_ARENA_BYTES = std::size_t{64} << 30;
+    static constexpr size_t VARIABLE_UNPOOLED_BUDGET = std::size_t{48} << 30;
+    std::shared_ptr<std::pmr::memory_resource> variableAllocator;
+    std::optional<SizeClassConfig> sizeClassConfig;
+    size_t effectiveUnpooledLimit = unpooledLimitInBytes;
+    switch (workerConfiguration.variableSizeAllocator.getValue())
+    {
+        case VariableSizeAllocator::ComposeFixed:
+            variableAllocator = std::make_shared<ComposeFixedMemoryResource>(VARIABLE_ARENA_BYTES, bufferSize);
+            sizeClassConfig = std::nullopt;
+            effectiveUnpooledLimit = VARIABLE_UNPOOLED_BUDGET;
+            break;
+        case VariableSizeAllocator::VmCache:
+            variableAllocator = std::make_shared<VmCacheMemoryResource>(VARIABLE_ARENA_BYTES);
+            sizeClassConfig = std::nullopt;
+            effectiveUnpooledLimit = VARIABLE_UNPOOLED_BUDGET;
+            break;
+        case VariableSizeAllocator::Default:
+            variableAllocator = std::make_shared<NesDefaultMemoryAllocator>();
+            sizeClassConfig = makeSizeClassConfig(workerConfiguration);
+            break;
+    }
     auto bufferManager = BufferManager::create(
         bufferSize,
         explicitBufferCount > 0 ? explicitBufferCount : numberOfBuffers,
-        std::make_shared<NesDefaultMemoryAllocator>(),
+        variableAllocator,
         BufferManager::DEFAULT_ALIGNMENT,
-        makeSizeClassConfig(workerConfiguration),
-        unpooledLimitInBytes);
+        sizeClassConfig,
+        effectiveUnpooledLimit);
     auto queryLog = std::make_shared<QueryLog>();
 
     SpillConfiguration spillConfiguration;
