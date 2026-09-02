@@ -18,6 +18,7 @@
 #include <cerrno>
 #include <charconv>
 #include <chrono>
+#include <thread>
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
@@ -315,6 +316,22 @@ Source::FillTupleBufferResult MemorySource::fillTupleBuffer(TupleBuffer& tupleBu
     tupleBuffer.setNumberOfTuples(tuplesThisCall);
     replayOffset += bytesToCopy;
     totalNumBytesRead += bytesToCopy;
+    /// Offered-load pacing: NES_SOURCE_RATE_MTPS caps the source at R million tuples/s so latency can be
+    /// measured below saturation. Unset or 0 => unbounded (default). Coarse per-buffer pace: sleep until the
+    /// ideal release time of the tuples emitted so far.
+    static const double paceRate = [] { const char* e = std::getenv("NES_SOURCE_RATE_MTPS");
+        return e ? std::atof(e) * 1e6 : 0.0; }();
+    if (paceRate > 0.0)
+    {
+        const auto emitted = static_cast<double>(replayOffset / tupleWidth);
+        const auto targetNs = static_cast<long long>(emitted / paceRate * 1e9);
+        const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - steadyStateStart).count();
+        if (targetNs > elapsedNs)
+        {
+            std::this_thread::sleep_for(std::chrono::nanoseconds(targetNs - elapsedNs));
+        }
+    }
     /// The SourceThread overwrites numberOfTuples with this result value (raw text sources carry a BYTE count
     /// there for the input formatter to consume). This source emits native buffers with no formatter stage, so
     /// the value must be the TUPLE count that the native scan reads directly.
