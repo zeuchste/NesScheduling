@@ -135,8 +135,17 @@ HashMapOptions createHashMapOptions(
     }
 
     const auto pageSize = conf.pageSize.getValue();
-    const auto numberOfBuckets
-        = storageVariant == JoinStorageVariant::FIXED_ARRAY ? conf.joinFixedBuckets.getValue() : conf.numberOfPartitions.getValue();
+    /// join_fixed_buckets sizes the directory for FIXED_ARRAY; we also honor an explicit non-default
+    /// value for the chained placements, so a cardinality estimate (the free trigger-time distinct-key
+    /// statistic, or a user hint) can right-size the map at server-scale key counts where the default
+    /// bucket constant leaves chains thousands deep. ponytail: set at lowering, not per-window; the
+    /// runtime per-window feedback loop is the upgrade path.
+    const auto defaultBuckets = conf.numberOfPartitions.getValue();
+    const auto numberOfBuckets = storageVariant == JoinStorageVariant::FIXED_ARRAY
+        ? conf.joinFixedBuckets.getValue()
+        : (conf.joinFixedBuckets.getValue() != conf.joinFixedBuckets.getDefaultValue()
+               ? conf.joinFixedBuckets.getValue()
+               : defaultBuckets);
     const auto entrySize = sizeof(ChainedHashMapEntry) + keySize + valueSize;
     const auto entriesPerPage = pageSize / entrySize;
 
